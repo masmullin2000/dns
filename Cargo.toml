@@ -1,0 +1,16 @@
+[package]
+name = "dns"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.82"
+crossbeam-channel = "0.5.12"
+simple-dns = { path = "/code/simple-dns/simple-dns" }
+socket2 = "0.5.7"
+tokio = { version = "1.37.0", features = ["full"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
