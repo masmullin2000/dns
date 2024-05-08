@@ -4,11 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.82"
-crossbeam-channel = "0.5.12"
-simple-dns = { path = "/code/simple-dns/simple-dns" }
-socket2 = "0.5.7"
-tokio = { version = "1.37.0", features = ["full"] }
+anyhow = "1"
+crossbeam-channel = "0.5"
+simple-dns = { git = "https://github.com/masmullin2000/simple-dns.git", branch = "access_data" }
+socket2 = "0.5"
+tokio = { version = "1", features = ["full"] }
+toml = "0.8"
 
 [profile.release]
 lto = true

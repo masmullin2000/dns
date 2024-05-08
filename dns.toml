@@ -1,0 +1,4 @@
+[LocalNetwork]
+dns = "192.168.0.22"
+jup = "192.168.0.3"
+domains = ["local", "home", "lan"]
