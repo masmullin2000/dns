@@ -1,0 +1,10 @@
+[Unit]
+Description=LocalHost DNS Forwarder
+After=network.target
+
+[Service]
+ExecStart=/code/dns/dns
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
