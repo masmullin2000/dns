@@ -2,9 +2,12 @@ use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use simple_dns as dns;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net;
-use tokio::sync::mpsc;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net,
+    sync::mpsc,
+    time::timeout,
+};
 
 type Sender = mpsc::Sender<ChannelData>;
 
@@ -262,9 +265,8 @@ fn udp_server(config: Arc<Config>) -> Result<()> {
                         eprintln!("Failed to send DNS packet: {e}");
                         continue;
                     };
-                    let timeout = std::time::Duration::from_secs(1);
-                    let sz = match tokio::time::timeout(timeout, dns_sock.recv(&mut rec_buf)).await
-                    {
+                    let dur = std::time::Duration::from_millis(250);
+                    let sz = match timeout(dur, dns_sock.recv(&mut rec_buf)).await {
                         Ok(Ok(sz)) => sz,
                         Err(_) => {
                             eprintln!("Timeout when connecting to {ns}");
@@ -313,7 +315,7 @@ fn udp_server(config: Arc<Config>) -> Result<()> {
 }
 
 async fn tcp_server() -> anyhow::Result<()> {
-    let timeout = std::time::Duration::from_millis(250);
+    let dur = std::time::Duration::from_millis(250);
     let sock = net::TcpListener::bind("0.0.0.0:53")
         .await
         .inspect_err(|e| eprintln!("Failed to bind UDP socket: {e}"))?;
@@ -338,8 +340,7 @@ async fn tcp_server() -> anyhow::Result<()> {
                 eprintln!("Failed to send DNS packet: {e}");
                 continue;
             }
-            let Ok(data) = tokio::time::timeout(timeout, Box::pin(dns_sock.read_eof())).await
-            else {
+            let Ok(data) = timeout(dur, Box::pin(dns_sock.read_eof())).await else {
                 continue;
             };
 
@@ -356,7 +357,7 @@ async fn tcp_server() -> anyhow::Result<()> {
         }) else {
             continue;
         };
-        let Ok(buf) = tokio::time::timeout(timeout, Box::pin(sock.read_eof()))
+        let Ok(buf) = timeout(dur, Box::pin(sock.read_eof()))
             .await
             .inspect_err(|e| {
                 eprintln!("Failed to receive DNS packet from {sock:?}: {e}");
