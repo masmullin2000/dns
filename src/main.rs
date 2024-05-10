@@ -6,6 +6,26 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net;
 use tokio::sync::mpsc;
 
+type Sender = mpsc::Sender<ChannelData>;
+
+const ADDR: &str = "0.0.0.0:53";
+const LOCAL_ADDR: &str = "127.0.0.53:53";
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    std::panic::set_hook(Box::new(|p| {
+        eprintln!("panic: {p:?}");
+        std::process::exit(1);
+    }));
+
+    let config: Arc<Config> = Arc::new("/code/dns/dns.toml".parse()?);
+
+    tokio::spawn(async {
+        udp_server(config).expect("udp_server failed");
+    });
+    Box::pin(tcp_server()).await
+}
+
 struct ChannelData {
     bytes: Vec<u8>,
     addr: std::net::SocketAddr,
@@ -18,11 +38,7 @@ impl ChannelData {
     }
 }
 
-type Sender = mpsc::Sender<ChannelData>;
-
-const ADDR: &str = "0.0.0.0:53";
-const LOCAL_ADDR: &str = "127.0.0.53:53";
-
+#[derive(Clone)]
 struct DnsConfig {
     addr: std::net::IpAddr,
     name: String,
@@ -41,10 +57,11 @@ where
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Config {
     dns: Vec<DnsConfig>,
     domains: Vec<String>,
+    nameservers: Vec<std::net::SocketAddr>,
 }
 
 impl Config {
@@ -68,63 +85,76 @@ impl Config {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    std::panic::set_hook(Box::new(|p| {
-        eprintln!("panic: {p:?}");
-        std::process::exit(1);
-    }));
+impl std::str::FromStr for Config {
+    type Err = anyhow::Error;
 
-    let config = parse_config("/code/dns/dns.toml")?;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let file = std::fs::read_to_string(s)?;
+        let toml: toml::Table = toml::from_str(&file)?;
 
-    tokio::spawn(async {
-        udp_server(config).expect("udp_server failed");
-    });
-    Box::pin(tcp_server()).await
-}
+        let mut config = Self::default();
 
-fn parse_config(file: &str) -> Result<Config> {
-    let file = std::fs::read_to_string(file)?;
-    let toml: toml::Table = toml::from_str(&file)?;
-
-    let mut config = Config::default();
-
-    for (key, value) in toml {
-        match key.to_lowercase().as_str() {
-            "localnetwork" | "localnetworks" => {
-                let ln = value.as_table().expect("LocalNetwork must be a table");
-                for (name, addr) in ln {
-                    if name == "domains" {
-                        let domains = addr.as_array().expect("domains must be an array");
-                        for domain in domains {
-                            let domain = domain.as_str().expect("domain must be a string");
-                            config.domains.push(domain.to_string());
+        for (key, value) in toml {
+            match key.to_lowercase().as_str() {
+                "localnetwork" | "localnetworks" => {
+                    let ln = value.as_table().expect("LocalNetwork must be a table");
+                    for (name, addr) in ln {
+                        if name == "domains" {
+                            let domains = addr.as_array().expect("domains must be an array");
+                            for domain in domains {
+                                let domain = domain.as_str().expect("domain must be a string");
+                                config.domains.push(domain.to_string());
+                            }
+                            continue;
                         }
-                        continue;
+                        let addr = addr.as_str().expect("dns addr must be a string");
+                        let addr: std::net::IpAddr =
+                            addr.parse().expect("dns addr must be a valid IP address");
+                        let dns_cfg = (name, addr).into();
+                        config.dns.push(dns_cfg);
                     }
-                    let addr = addr.as_str().expect("dns addr must be a string");
-                    let addr: std::net::IpAddr =
-                        addr.parse().expect("dns addr must be a valid IP address");
-                    let dns_cfg = (name, addr).into();
-                    config.dns.push(dns_cfg);
+                }
+                "nameservers" => {
+                    println!("{value:?}");
+                    let nameservers = value.as_table().expect("nameservers must be an array");
+                    config.nameservers = nameservers
+                        .iter()
+                        .filter_map(|(ip, val)| {
+                            if !val.as_bool()? {
+                               return None;
+                            };
+                            let ns: std::net::IpAddr = ip
+                                .parse()
+                                .inspect_err(|e| {
+                                    eprintln!("nameserver must be a valid IP address: skipping {ip}: error: {e}");
+                                })
+                                .ok()?;
+                            println!("found nameserver: {ns}");
+                            Some(std::net::SocketAddr::new(ns, 53))
+                        })
+                        .collect();
+                }
+                val => {
+                    bail!("Unknown toml entry key: {val}");
                 }
             }
-            val => {
-                bail!("Unknown toml entry key: {val}");
-            }
         }
-    }
 
-    Ok(config)
+        if config.nameservers.is_empty() {
+            bail!("No nameservers specified");
+        }
+
+        Ok(config)
+    }
 }
 
-fn udp_sock(addr: &str) -> Result<net::UdpSocket> {
+fn udp_sock(addr: impl AsRef<str>) -> Result<net::UdpSocket> {
     let sock = socket2::Socket::new(
         socket2::Domain::IPV4,
         socket2::Type::DGRAM,
         Some(socket2::Protocol::UDP),
     )?;
-    let addr: std::net::SocketAddr = addr.parse()?;
+    let addr: std::net::SocketAddr = addr.as_ref().parse()?;
     sock.set_reuse_port(true)?;
     sock.bind(&addr.into())?;
     sock.set_nonblocking(true)?;
@@ -172,7 +202,7 @@ impl MakeDnsAnswers for dns::Question<'_> {
     }
 }
 
-fn udp_server(config: Config) -> Result<()> {
+fn udp_server(config: Arc<Config>) -> Result<()> {
     let remote_sock = Arc::new(udp_sock(ADDR)?);
     let local_sock = Arc::new(udp_sock(LOCAL_ADDR)?);
 
@@ -181,67 +211,82 @@ fn udp_server(config: Config) -> Result<()> {
     tokio::spawn(async move {
         let mut rec_buf = [0u8; 65535];
         while let Some(channel_data) = rx.recv().await {
-            let bytes = channel_data.bytes.as_slice();
-            let addr = &channel_data.addr;
-            let sock = &channel_data.sock;
+            let config = config.clone();
+            tokio::spawn(async move {
+                let bytes = channel_data.bytes.as_slice();
+                let addr = &channel_data.addr;
+                let sock = &channel_data.sock;
 
-            let Ok(pkt) = dns::Packet::parse(bytes) else {
-                eprintln!("Failed to parse DNS packet");
-                continue;
-            };
+                let Ok(pkt) = dns::Packet::parse(bytes) else {
+                    eprintln!("Failed to parse DNS packet");
+                    return;
+                };
 
-            let mut answers = Vec::new();
+                let mut answers = Vec::new();
 
-            for question in &pkt.questions {
-                let mut ans = question.make_dns_answers(&config);
-                answers.append(&mut ans);
-            }
+                for question in &pkt.questions {
+                    let mut ans = question.make_dns_answers(&config);
+                    answers.append(&mut ans);
+                }
 
-            if !answers.is_empty() {
-                let mut reply = pkt.clone().into_reply();
-                reply.set_flags(
-                    dns::PacketFlag::RESPONSE
-                        | dns::PacketFlag::RECURSION_DESIRED
-                        | dns::PacketFlag::RECURSION_AVAILABLE,
-                );
-                reply.answers = answers;
-                let reply_data = reply.build_bytes_vec().unwrap();
+                if !answers.is_empty() {
+                    let mut reply = pkt.clone().into_reply();
+                    reply.set_flags(
+                        dns::PacketFlag::RESPONSE
+                            | dns::PacketFlag::RECURSION_DESIRED
+                            | dns::PacketFlag::RECURSION_AVAILABLE,
+                    );
+                    reply.answers = answers;
+                    let reply_data = reply.build_bytes_vec().unwrap();
 
-                _ = sock.send_to(&reply_data, addr).await.inspect_err(|e| {
-                    eprintln!("Failed to send custom DNS packet to {addr}: {e}");
-                });
+                    _ = sock.send_to(&reply_data, addr).await.inspect_err(|e| {
+                        eprintln!("Failed to send custom DNS packet to {addr}: {e}");
+                    });
 
-                continue;
-            }
+                    return;
+                }
 
-            let Ok(dns_sock) = net::UdpSocket::bind("0.0.0.0:0")
-                .await
-                .inspect_err(|e| eprintln!("Failed to bind UDP socket: {e}"))
-            else {
-                continue;
-            };
-            if let Err(e) = dns_sock.connect("1.1.1.1:53").await {
-                eprintln!("Failed to connect to DNS server: {e}");
-                continue;
-            };
-            if let Err(e) = dns_sock.send(bytes).await {
-                eprintln!("Failed to send DNS packet: {e}");
-                continue;
-            };
-            let Ok(sz) = dns_sock.recv(&mut rec_buf).await.inspect_err(|e| {
-                eprintln!("Failed to receive DNS packet: {e}");
-            }) else {
-                continue;
-            };
-            let data = &rec_buf[..sz];
+                let Ok(dns_sock) = net::UdpSocket::bind("0.0.0.0:0")
+                    .await
+                    .inspect_err(|e| eprintln!("Failed to bind UDP socket: {e}"))
+                else {
+                    return;
+                };
 
-            if dns::Packet::parse(data).is_err() {
-                eprintln!("Failed to parse DNS packet");
-                continue;
-            };
+                for ns in &config.nameservers {
+                    if let Err(e) = dns_sock.connect(ns).await {
+                        eprintln!("Failed to connect to DNS server: {e}");
+                        continue;
+                    };
+                    if let Err(e) = dns_sock.send(bytes).await {
+                        eprintln!("Failed to send DNS packet: {e}");
+                        continue;
+                    };
+                    let timeout = std::time::Duration::from_secs(1);
+                    let sz = match tokio::time::timeout(timeout, dns_sock.recv(&mut rec_buf)).await
+                    {
+                        Ok(Ok(sz)) => sz,
+                        Err(_) => {
+                            eprintln!("Timeout when connecting to {ns}");
+                            continue;
+                        }
+                        Ok(Err(e)) => {
+                            eprintln!("Failed to receive DNS packet: {e}");
+                            continue;
+                        }
+                    };
+                    let data = &rec_buf[..sz];
 
-            _ = sock.send_to(data, addr).await.inspect_err(|e| {
-                eprintln!("Failed to send DNS packet to {addr}: {e}");
+                    if dns::Packet::parse(data).is_err() {
+                        eprintln!("Failed to parse DNS packet");
+                        continue;
+                    };
+
+                    let Err(e) = sock.send_to(data, addr).await else {
+                        return;
+                    };
+                    eprintln!("Failed to send DNS packet to {addr}: {e}");
+                }
             });
         }
     });

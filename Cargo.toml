@@ -9,7 +9,7 @@ crossbeam-channel = "0.5"
 simple-dns = { git = "https://github.com/masmullin2000/simple-dns.git", branch = "access_data" }
 socket2 = "0.5"
 tokio = { version = "1", features = ["full"] }
-toml = "0.8"
+toml = { version = "0.8", features = ["preserve_order"] }
 
 [profile.release]
 lto = true

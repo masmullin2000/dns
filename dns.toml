@@ -1,4 +1,9 @@
 [LocalNetwork]
-dns = "192.168.0.22"
-jup = "192.168.0.3"
+dns = "192.168.0.2"
+#jup = "192.168.0.3"
 domains = ["local", "home", "lan"]
+
+[nameservers]
+"192.168.0.2" = true
+"1.1.1.1" = true 
+"8.8.8.8" = true 
