@@ -21,7 +21,12 @@ async fn main() -> Result<()> {
         std::process::exit(1);
     }));
 
-    let config: Arc<Config> = Arc::new("/code/dns/dns.toml".parse()?);
+    let mut config: Config = "/code/dns/dns.toml".parse()?;
+    config.load_blocklist("/code/dns/ultimate.txt")?;
+    config.load_blocklist("/code/dns/domainswild")?;
+    config.load_blocklist("/code/dns/mine.txt")?;
+    //    config.load_blocklist("/code/dns/anti.piracy.txt")?;
+    let config = Arc::new(config);
 
     tokio::spawn(async {
         udp_server(config).expect("udp_server failed");
@@ -65,6 +70,8 @@ struct Config {
     dns: Vec<DnsConfig>,
     domains: Vec<String>,
     nameservers: Vec<std::net::SocketAddr>,
+    //blocklist: HashSet<String>,
+    blocklist: exists_map::ExistsMap<String, ()>,
 }
 
 impl Config {
@@ -85,6 +92,32 @@ impl Config {
             }
         }
         None
+    }
+
+    fn load_blocklist(&mut self, block_file: &str) -> Result<()> {
+        let file = std::fs::read_to_string(block_file)?;
+        for line in file.lines() {
+            if !line.is_empty() && line.starts_with("*.") {
+                let name = &line[2..];
+                self.blocklist.insert(name.into(), ());
+            }
+        }
+        Ok(())
+    }
+
+    fn has_block(&self, value: &str) -> bool {
+        let mut name = value;
+        while !name.is_empty() {
+            if self.blocklist.contains(name) {
+                return true;
+            }
+            if let Some((_, value)) = name.split_once('.') {
+                name = value;
+            } else {
+                break;
+            }
+        }
+        false
     }
 }
 
@@ -169,39 +202,36 @@ fn udp_sock(addr: impl AsRef<str>) -> Result<net::UdpSocket> {
     Ok(sock)
 }
 
-trait MakeDnsAnswers {
-    fn make_dns_answers(&self, config: &Config) -> Vec<dns::ResourceRecord>;
+trait DnsAnswers {
+    fn check(&self, config: &Config) -> Option<dns::ResourceRecord>;
 }
 
-impl MakeDnsAnswers for dns::Question<'_> {
-    fn make_dns_answers(&self, config: &Config) -> Vec<dns::ResourceRecord<'_>> {
-        let labels = self.qname.get_labels();
+impl DnsAnswers for dns::Question<'_> {
+    fn check(&self, config: &Config) -> Option<dns::ResourceRecord<'_>> {
+        let name = self.qname.to_string();
 
-        labels
-            .iter()
-            .filter_map(|label| {
-                let name = std::str::from_utf8(label.data()).ok()?;
-                let addr = config.has_addr(name)?;
-                let class = match self.qclass {
-                    dns::QCLASS::CLASS(class) => class,
-                    dns::QCLASS::ANY => dns::CLASS::NONE,
-                };
-
-                let rdata = match addr {
-                    std::net::IpAddr::V4(addr) => dns::rdata::RData::A(dns::rdata::A::from(addr)),
-                    std::net::IpAddr::V6(addr) => {
-                        dns::rdata::RData::AAAA(dns::rdata::AAAA::from(addr))
-                    }
-                };
-
-                Some(dns::ResourceRecord::new(
-                    self.qname.clone(),
-                    class,
-                    300,
-                    rdata,
-                ))
-            })
-            .collect()
+        let addr = if config.has_block(&name) {
+            //println!("Blocked: {name}");
+            std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1))
+        } else if let Some(addr) = config.has_addr(&name) {
+            addr
+        } else {
+            return None;
+        };
+        let class = match self.qclass {
+            dns::QCLASS::CLASS(class) => class,
+            dns::QCLASS::ANY => dns::CLASS::NONE,
+        };
+        let rdata = match addr {
+            std::net::IpAddr::V4(addr) => dns::rdata::RData::A(dns::rdata::A::from(addr)),
+            std::net::IpAddr::V6(addr) => dns::rdata::RData::AAAA(dns::rdata::AAAA::from(addr)),
+        };
+        Some(dns::ResourceRecord::new(
+            self.qname.clone(),
+            class,
+            300,
+            rdata,
+        ))
     }
 }
 
@@ -209,7 +239,7 @@ fn udp_server(config: Arc<Config>) -> Result<()> {
     let remote_sock = Arc::new(udp_sock(ADDR)?);
     let local_sock = Arc::new(udp_sock(LOCAL_ADDR)?);
 
-    let (tx, mut rx) = mpsc::channel::<ChannelData>(1000);
+    let (tx, mut rx) = mpsc::channel::<ChannelData>(64);
 
     tokio::spawn(async move {
         let mut rec_buf = [0u8; 65535];
@@ -225,12 +255,11 @@ fn udp_server(config: Arc<Config>) -> Result<()> {
                     return;
                 };
 
-                let mut answers = Vec::new();
-
-                for question in &pkt.questions {
-                    let mut ans = question.make_dns_answers(&config);
-                    answers.append(&mut ans);
-                }
+                let answers: Vec<_> = pkt
+                    .questions
+                    .iter()
+                    .filter_map(|question| question.check(&config))
+                    .collect();
 
                 if !answers.is_empty() {
                     let mut reply = pkt.clone().into_reply();
@@ -240,7 +269,10 @@ fn udp_server(config: Arc<Config>) -> Result<()> {
                             | dns::PacketFlag::RECURSION_AVAILABLE,
                     );
                     reply.answers = answers;
-                    let reply_data = reply.build_bytes_vec().unwrap();
+                    let Ok(reply_data) = reply.build_bytes_vec() else {
+                        eprintln!("Failed to build custom DNS reply packet");
+                        return;
+                    };
 
                     _ = sock.send_to(&reply_data, addr).await.inspect_err(|e| {
                         eprintln!("Failed to send custom DNS packet to {addr}: {e}");
@@ -265,7 +297,7 @@ fn udp_server(config: Arc<Config>) -> Result<()> {
                         eprintln!("Failed to send DNS packet: {e}");
                         continue;
                     };
-                    let dur = std::time::Duration::from_millis(250);
+                    let dur = std::time::Duration::from_millis(500);
                     let sz = match timeout(dur, dns_sock.recv(&mut rec_buf)).await {
                         Ok(Ok(sz)) => sz,
                         Err(_) => {
@@ -279,15 +311,19 @@ fn udp_server(config: Arc<Config>) -> Result<()> {
                     };
                     let data = &rec_buf[..sz];
 
-                    if dns::Packet::parse(data).is_err() {
-                        eprintln!("Failed to parse DNS packet");
+                    let Ok(pkt) = dns::Packet::parse(data) else {
+                        eprintln!("Failed to parse DNS Response packet");
                         continue;
                     };
+                    if pkt.answers.is_empty() {
+                        continue;
+                    }
 
-                    let Err(e) = sock.send_to(data, addr).await else {
-                        return;
+                    if let Err(e) = sock.send_to(data, addr).await {
+                        eprintln!("Failed to send DNS packet to {addr}: {e}");
                     };
-                    eprintln!("Failed to send DNS packet to {addr}: {e}");
+
+                    return;
                 }
             });
         }
