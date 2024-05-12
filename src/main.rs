@@ -311,13 +311,10 @@ fn udp_server(config: Arc<Config>) -> Result<()> {
                     };
                     let data = &rec_buf[..sz];
 
-                    let Ok(pkt) = dns::Packet::parse(data) else {
+                    let Ok(_pkt) = dns::Packet::parse(data) else {
                         eprintln!("Failed to parse DNS Response packet");
                         continue;
                     };
-                    if pkt.answers.is_empty() {
-                        continue;
-                    }
 
                     if let Err(e) = sock.send_to(data, addr).await {
                         eprintln!("Failed to send DNS packet to {addr}: {e}");
