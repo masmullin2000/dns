@@ -5,14 +5,13 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
+bloomfilter = "1.0.13"
 crossbeam-channel = "0.5"
 simple-dns = { git = "https://github.com/masmullin2000/simple-dns.git", branch = "access_data" }
 socket2 = "0.5"
+tikv-jemallocator = "0.5.4"
 tokio = { version = "1", features = ["full"] }
 toml = { version = "0.8", features = ["preserve_order"] }
-trie-rs = "0.4.0"
-
-exists_map = { git = "https://github.com/masmullin2000/exists_map.git" }
 
 [profile.release]
 lto = true

@@ -1,7 +1,12 @@
 [LocalNetwork]
 dns = "192.168.0.2"
-#jup = "192.168.0.3"
+jup = "192.168.0.3"
+work = "192.168.0.26"
+rhel8 = "192.168.0.38"
+rhel9 = "192.168.0.28"
+deb11 = "192.168.0.32"
 domains = ["local", "home", "lan"]
+blocklists = ["/code/dns/hagezi.list", "/code/dns/oisd.list", "/code/dns/steve.list"]
 
 [nameservers]
 "1.1.1.1" = true 

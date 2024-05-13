@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use anyhow::{bail, Result};
 use simple_dns as dns;
@@ -9,22 +9,35 @@ use tokio::{
     time::timeout,
 };
 
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 type Sender = mpsc::Sender<ChannelData>;
 
 const ADDR: &str = "0.0.0.0:53";
 const LOCAL_ADDR: &str = "127.0.0.53:53";
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     std::panic::set_hook(Box::new(|p| {
         eprintln!("panic: {p:?}");
         std::process::exit(1);
     }));
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    rt.block_on(async { run().await })
+}
 
+async fn run() -> Result<()> {
     let mut config: Config = "/code/dns/dns.toml".parse()?;
-    config.load_blocklist("/code/dns/ultimate.txt")?;
-    config.load_blocklist("/code/dns/domainswild")?;
-    config.load_blocklist("/code/dns/mine.txt")?;
+    // config.load_blocklist("/code/dns/ultimate.txt")?;
+    // config.load_blocklist("/code/dns/domainswild")?;
+    // config.load_blocklist("/code/dns/mine.txt")?;
+    config.build_blocklist();
     //    config.load_blocklist("/code/dns/anti.piracy.txt")?;
     let config = Arc::new(config);
 
@@ -71,7 +84,9 @@ struct Config {
     domains: Vec<String>,
     nameservers: Vec<std::net::SocketAddr>,
     //blocklist: HashSet<String>,
-    blocklist: exists_map::ExistsMap<String, ()>,
+    //blocklist: exists_map::ExistsMap<String, ()>,
+    blocklist: Option<bloomfilter::Bloom<Box<str>>>,
+    blocklist_builder: HashSet<Box<str>>,
 }
 
 impl Config {
@@ -99,16 +114,38 @@ impl Config {
         for line in file.lines() {
             if !line.is_empty() && line.starts_with("*.") {
                 let name = &line[2..];
-                self.blocklist.insert(name.into(), ());
+                self.blocklist_builder.insert(name.into());
+                //self.blocklist.insert(name.into(), ());
+                // self.blocklist.set(&name.into());
+                // self.len += 1;
+                // println!("blocking: {name}: {}",self.len);
+                // if self.blocklist.check(&"test".into()) {
+                //     println!("test exists");
+                // }
             }
         }
         Ok(())
     }
 
+    fn build_blocklist(&mut self) {
+        let mut blocklist =
+            bloomfilter::Bloom::new_for_fp_rate(self.blocklist_builder.len(), 0.001);
+        for item in &self.blocklist_builder {
+            blocklist.set(item);
+        }
+        self.blocklist = Some(blocklist);
+        self.blocklist_builder.clear();
+        self.blocklist_builder.shrink_to_fit();
+    }
+
     fn has_block(&self, value: &str) -> bool {
+        let Some(ref blocklist) = self.blocklist else {
+            return false;
+        };
         let mut name = value;
         while !name.is_empty() {
-            if self.blocklist.contains(name) {
+            //if self.blocklist.contains(name) {
+            if blocklist.check(&name.into()) {
                 return true;
             }
             if let Some((_, value)) = name.split_once('.') {
@@ -140,6 +177,14 @@ impl std::str::FromStr for Config {
                             for domain in domains {
                                 let domain = domain.as_str().expect("domain must be a string");
                                 config.domains.push(domain.to_string());
+                            }
+                            continue;
+                        }
+                        if name == "blocklists" {
+                            let blocklists = addr.as_array().expect("blocklists must be an array");
+                            for blocklist in blocklists {
+                                let blocklist = blocklist.as_str().expect("blocklist must be a string");
+                                config.load_blocklist(blocklist)?;
                             }
                             continue;
                         }
