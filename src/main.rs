@@ -120,6 +120,7 @@ impl Config {
 
     fn build_blocklist(&mut self) {
         if self.blocklist_builder.is_empty() {
+            println!("Blocklist Size 0");
             return;
         }
         let mut blocklist =
@@ -128,6 +129,7 @@ impl Config {
             blocklist.set(item);
         }
         self.blocklist = Some(blocklist);
+        println!("Blocklist Size {}", self.blocklist_builder.len());
         self.blocklist_builder.clear();
         self.blocklist_builder.shrink_to_fit();
     }
