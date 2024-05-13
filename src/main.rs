@@ -83,8 +83,6 @@ struct Config {
     dns: Vec<DnsConfig>,
     domains: Vec<String>,
     nameservers: Vec<std::net::SocketAddr>,
-    //blocklist: HashSet<String>,
-    //blocklist: exists_map::ExistsMap<String, ()>,
     blocklist: Option<bloomfilter::Bloom<Box<str>>>,
     blocklist_builder: HashSet<Box<str>>,
 }
@@ -115,19 +113,15 @@ impl Config {
             if !line.is_empty() && line.starts_with("*.") {
                 let name = &line[2..];
                 self.blocklist_builder.insert(name.into());
-                //self.blocklist.insert(name.into(), ());
-                // self.blocklist.set(&name.into());
-                // self.len += 1;
-                // println!("blocking: {name}: {}",self.len);
-                // if self.blocklist.check(&"test".into()) {
-                //     println!("test exists");
-                // }
             }
         }
         Ok(())
     }
 
     fn build_blocklist(&mut self) {
+        if self.blocklist_builder.is_empty() {
+            return;
+        }
         let mut blocklist =
             bloomfilter::Bloom::new_for_fp_rate(self.blocklist_builder.len(), 0.001);
         for item in &self.blocklist_builder {
@@ -144,7 +138,6 @@ impl Config {
         };
         let mut name = value;
         while !name.is_empty() {
-            //if self.blocklist.contains(name) {
             if blocklist.check(&name.into()) {
                 return true;
             }
@@ -183,8 +176,11 @@ impl std::str::FromStr for Config {
                         if name == "blocklists" {
                             let blocklists = addr.as_array().expect("blocklists must be an array");
                             for blocklist in blocklists {
-                                let blocklist = blocklist.as_str().expect("blocklist must be a string");
-                                config.load_blocklist(blocklist)?;
+                                let blocklist =
+                                    blocklist.as_str().expect("blocklist must be a string");
+                                _ = config.load_blocklist(blocklist).inspect_err(|e| {
+                                    eprintln!("Failed to load blocklist {blocklist}: {e}");
+                                });
                             }
                             continue;
                         }
