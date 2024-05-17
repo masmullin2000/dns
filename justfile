@@ -9,8 +9,8 @@ dev:
 run: (dev)
     cargo run
 
-run-rel target triple=(arch() + "-unknown-linux-musl"): (rel target)
-    sudo ./target/{{triple}}/release/dns
+run-rel target triple=(arch() + "-unknown-linux"): (rel target)
+    sudo ./target/{{triple}}-{{target}}/release/dns
 
 clippy type:
     cargo +{{type}} clippy -- -D clippy::pedantic -D clippy::nursery

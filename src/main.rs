@@ -77,13 +77,14 @@ where
         }
     }
 }
-
-#[derive(Default, Clone)]
+use std::collections::hash_map::DefaultHasher;
+#[derive(Default)]
 struct Config {
     dns: Vec<DnsConfig>,
     domains: Vec<String>,
     nameservers: Vec<std::net::SocketAddr>,
-    blocklist: Option<bloomfilter::Bloom<Box<str>>>,
+    //blocklist: Option<bloomfilter::Bloom<Box<str>>>,
+    blocklist: Option<cuckoofilter::CuckooFilter<DefaultHasher>>,
     blocklist_builder: HashSet<Box<str>>,
 }
 
@@ -123,10 +124,11 @@ impl Config {
             println!("Blocklist Size 0");
             return;
         }
-        let mut blocklist =
-            bloomfilter::Bloom::new_for_fp_rate(self.blocklist_builder.len(), 0.001);
+        // let mut blocklist =
+        //     bloomfilter::Bloom::new_for_fp_rate(self.blocklist_builder.len(), 0.001);
+        let mut blocklist = cuckoofilter::CuckooFilter::with_capacity(self.blocklist_builder.len());
         for item in &self.blocklist_builder {
-            blocklist.set(item);
+            blocklist.add(item).unwrap();
         }
         self.blocklist = Some(blocklist);
         println!("Blocklist Size {}", self.blocklist_builder.len());
@@ -140,7 +142,7 @@ impl Config {
         };
         let mut name = value;
         while !name.is_empty() {
-            if blocklist.check(&name.into()) {
+            if blocklist.contains(name) {
                 return true;
             }
             if let Some((_, value)) = name.split_once('.') {
