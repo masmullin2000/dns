@@ -5,12 +5,15 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
+clap = { version = "4", features = ["derive"] }
 bloomfilter = "1.0"
 crossbeam-channel = "0.5"
+futures = "0.3"
 simple-dns = "0.7"
 socket2 = "0.5"
 tikv-jemallocator = "0.5"
 tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
 toml = { version = "0.8", features = ["preserve_order"] }
 
 [profile.release]

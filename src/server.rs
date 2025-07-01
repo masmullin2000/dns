@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use futures::future::select_all;
 use simple_dns as dns;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -23,7 +24,7 @@ pub struct ChannelData {
 }
 
 impl ChannelData {
-    fn new(bytes: Vec<u8>, addr: std::net::SocketAddr, sock: Arc<net::UdpSocket>) -> Self {
+    const fn new(bytes: Vec<u8>, addr: std::net::SocketAddr, sock: Arc<net::UdpSocket>) -> Self {
         Self { bytes, addr, sock }
     }
 }
@@ -79,6 +80,63 @@ impl DnsAnswers for dns::Question<'_> {
     }
 }
 
+async fn process_dns_request(config: Arc<Config>, bytes: &[u8]) -> Result<Vec<u8>> {
+    const MAX_PKT_SIZE: usize = 65535;
+
+    let Ok(pkt) = dns::Packet::parse(bytes) else {
+        anyhow::bail!("Failed to parse DNS packet");
+    };
+
+    let answers: Vec<_> = pkt
+        .questions
+        .iter()
+        .filter_map(|question| question.check(&config))
+        .collect();
+
+    if !answers.is_empty() {
+        let mut reply = pkt.clone().into_reply();
+        reply.set_flags(
+            dns::PacketFlag::RESPONSE
+                | dns::PacketFlag::RECURSION_DESIRED
+                | dns::PacketFlag::RECURSION_AVAILABLE,
+        );
+        reply.answers = answers;
+        let Ok(reply_data) = reply.build_bytes_vec() else {
+            anyhow::bail!("Failed to build custom DNS reply packet");
+        };
+        return Ok(reply_data);
+    }
+
+    let futures = config.get_nameservers().into_iter().map(|ns| {
+        let mut rec_buf = vec![0u8; MAX_PKT_SIZE];
+        Box::pin(async move {
+            let Ok(dns_sock) = net::UdpSocket::bind("0.0.0.0:0").await else {
+                return Err(anyhow::anyhow!("Failed to bind UDP socket"));
+            };
+            if dns_sock.connect(ns).await.is_err() {
+                return Err(anyhow::anyhow!("Failed to connect to DNS server"));
+            }
+            if dns_sock.send(bytes).await.is_err() {
+                return Err(anyhow::anyhow!("Failed to send DNS packet"));
+            }
+            let dur = std::time::Duration::from_millis(500);
+            let Ok(Ok(sz)) = timeout(dur, dns_sock.recv(&mut rec_buf)).await else {
+                return Err(anyhow::anyhow!("Timeout when connecting to {ns}"));
+            };
+            let data = &rec_buf[..sz];
+            if dns::Packet::parse(data).is_ok() {
+                return Ok(data.to_vec());
+            }
+            Err(anyhow::anyhow!("Failed to parse DNS packet"))
+        })
+    });
+
+    match select_all(futures).await {
+        (Ok(data), _, _) => Ok(data),
+        _ => anyhow::bail!("Failed to get a response from any nameserver"),
+    }
+}
+
 pub fn udp_server(config: Arc<Config>) -> Result<()> {
     let remote_sock = Arc::new(udp_sock(ADDR)?);
     let local_sock = Arc::new(udp_sock(LOCAL_ADDR)?);
@@ -86,92 +144,24 @@ pub fn udp_server(config: Arc<Config>) -> Result<()> {
     let (tx, mut rx) = mpsc::channel::<ChannelData>(64);
 
     tokio::spawn(async move {
-        let mut rec_buf = [0u8; 65535];
         while let Some(channel_data) = rx.recv().await {
             let config = config.clone();
             tokio::spawn(async move {
-                let bytes = channel_data.bytes.as_slice();
-                let addr = &channel_data.addr;
-                let sock = &channel_data.sock;
+                let bytes = channel_data.bytes;
+                let addr = channel_data.addr;
+                let sock = channel_data.sock;
 
-                let Ok(pkt) = dns::Packet::parse(bytes) else {
-                    eprintln!("Failed to parse DNS packet");
-                    return;
-                };
-
-                let answers: Vec<_> = pkt
-                    .questions
-                    .iter()
-                    .filter_map(|question| question.check(&config))
-                    .collect();
-
-                if !answers.is_empty() {
-                    let mut reply = pkt.clone().into_reply();
-                    reply.set_flags(
-                        dns::PacketFlag::RESPONSE
-                            | dns::PacketFlag::RECURSION_DESIRED
-                            | dns::PacketFlag::RECURSION_AVAILABLE,
-                    );
-                    reply.answers = answers;
-                    let Ok(reply_data) = reply.build_bytes_vec() else {
-                        eprintln!("Failed to build custom DNS reply packet");
-                        return;
-                    };
-
-                    _ = sock.send_to(&reply_data, addr).await.inspect_err(|e| {
-                        eprintln!("Failed to send custom DNS packet to {addr}: {e}");
-                    });
-
-                    return;
-                }
-
-                let Ok(dns_sock) = net::UdpSocket::bind("0.0.0.0:0")
-                    .await
-                    .inspect_err(|e| eprintln!("Failed to bind UDP socket: {e}"))
-                else {
-                    return;
-                };
-
-                for ns in &config.nameservers {
-                    if let Err(e) = dns_sock.connect(ns).await {
-                        eprintln!("Failed to connect to DNS server: {e}");
-                        continue;
-                    };
-                    if let Err(e) = dns_sock.send(bytes).await {
-                        eprintln!("Failed to send DNS packet: {e}");
-                        continue;
-                    };
-                    let dur = std::time::Duration::from_millis(500);
-                    let sz = match timeout(dur, dns_sock.recv(&mut rec_buf)).await {
-                        Ok(Ok(sz)) => sz,
-                        Err(_) => {
-                            eprintln!("Timeout when connecting to {ns}");
-                            continue;
-                        }
-                        Ok(Err(e)) => {
-                            eprintln!("Failed to receive DNS packet: {e}");
-                            continue;
-                        }
-                    };
-                    let data = &rec_buf[..sz];
-
-                    let Ok(_pkt) = dns::Packet::parse(data) else {
-                        eprintln!("Failed to parse DNS Response packet");
-                        continue;
-                    };
-
-                    if let Err(e) = sock.send_to(data, addr).await {
+                if let Ok(reply_data) = process_dns_request(config, &bytes).await {
+                    _ = sock.send_to(&reply_data, &addr).await.inspect_err(|e| {
                         eprintln!("Failed to send DNS packet to {addr}: {e}");
-                    };
-
-                    return;
+                    });
                 }
             });
         }
     });
 
     let recv_loop = |sock: Arc<net::UdpSocket>, tx: Sender| async move {
-        let mut buf = [0u8; 65535];
+        let mut buf = vec![0u8; 65535];
         loop {
             let Ok((sz, addr)) = sock.recv_from(&mut buf).await.inspect_err(|e| {
                 eprintln!("Failed to receive DNS packet: {e}");
@@ -191,7 +181,7 @@ pub fn udp_server(config: Arc<Config>) -> Result<()> {
     Ok(())
 }
 
-pub async fn tcp_server() -> anyhow::Result<()> {
+pub async fn tcp_server(config: Arc<Config>) -> anyhow::Result<()> {
     let dur = std::time::Duration::from_millis(250);
     let sock = net::TcpListener::bind("0.0.0.0:53")
         .await
@@ -205,26 +195,14 @@ pub async fn tcp_server() -> anyhow::Result<()> {
 
     tokio::spawn(async move {
         while let Some((bytes, mut sock)) = rx.recv().await {
-            let Ok(mut dns_sock) = net::TcpStream::connect("1.1.1.1:53")
-                .await
-                .inspect_err(|e| {
-                    eprintln!("Failed to connect to DNS server: {e}");
-                })
-            else {
-                continue;
-            };
-            if let Err(e) = dns_sock.write_all(&bytes).await {
-                eprintln!("Failed to send DNS packet: {e}");
-                continue;
-            }
-            let Ok(data) = timeout(dur, Box::pin(dns_sock.read_eof())).await else {
-                continue;
-            };
-
-            if let Err(e) = sock.write_all(&data).await {
-                eprintln!("Failed to send DNS packet to {sock:?}: {e}");
-                continue;
-            }
+            let config = config.clone();
+            tokio::spawn(async move {
+                if let Ok(reply_data) = process_dns_request(config, &bytes).await {
+                    if let Err(e) = sock.write_all(&reply_data).await {
+                        eprintln!("Failed to send DNS packet to {sock:?}: {e}");
+                    }
+                }
+            });
         }
     });
 
@@ -253,7 +231,7 @@ trait Eof {
 impl Eof for net::TcpStream {
     async fn read_eof(&mut self) -> Vec<u8> {
         let mut buf = Vec::new();
-        let mut tmp = [0u8; 65535];
+        let mut tmp = vec![0u8; 65535];
         loop {
             let sz = self.read(&mut tmp).await.unwrap();
             let data = &tmp[..sz];

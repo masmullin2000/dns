@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use clap::Parser;
 
 mod config;
 mod server;
@@ -8,12 +9,19 @@ mod server;
 use config::Config;
 use server::{tcp_server, udp_server};
 
-#[cfg(not(target_env = "msvc"))]
-use tikv_jemallocator::Jemalloc;
+#[cfg(any(target_env = "msvc", target_os = "freebsd"))]
+use std::alloc::Syatem as Malloc;
+#[cfg(not(any(target_env = "msvc", target_os = "freebsd")))]
+use tikv_jemallocator::Jemalloc as Malloc;
 
-#[cfg(not(target_env = "msvc"))]
 #[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
+static GLOBAL: Malloc = Malloc;
+
+#[derive(Parser)]
+struct Args {
+    #[clap(short, long, default_value = "/opt/dns/dns.toml")]
+    config: std::path::PathBuf,
+}
 
 fn main() -> Result<()> {
     std::panic::set_hook(Box::new(|p| {
@@ -27,12 +35,13 @@ fn main() -> Result<()> {
 }
 
 async fn run() -> Result<()> {
-    let mut config: Config = "/opt/dns/dns.toml".parse()?;
-    config.build_blocklist();
+    let args = Args::parse();
+    let config: Config = std::fs::read_to_string(args.config)?.parse()?;
     let config = Arc::new(config);
 
+    let config_clone = config.clone();
     tokio::spawn(async move {
-        udp_server(config).expect("udp_server failed");
+        udp_server(config_clone).expect("udp_server failed");
     });
-    Box::pin(tcp_server()).await
+    Box::pin(tcp_server(config)).await
 }

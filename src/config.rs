@@ -1,51 +1,42 @@
 use anyhow::{bail, Result};
-use std::collections::HashSet;
+use serde::Deserialize;
+use std::collections::{HashMap, HashSet};
 
-#[derive(Clone)]
-pub struct DnsConfig {
-    pub addr: std::net::IpAddr,
-    pub name: String,
-}
-
-impl<S> From<(S, std::net::IpAddr)> for DnsConfig
-where
-    S: Into<String>,
-{
-    fn from(value: (S, std::net::IpAddr)) -> Self {
-        let (name, addr) = value;
-        Self {
-            addr,
-            name: name.into(),
-        }
-    }
-}
-
-#[derive(Default, Clone)]
+#[derive(Deserialize, Default, Clone)]
 pub struct Config {
-    pub dns: Vec<DnsConfig>,
-    pub domains: Vec<String>,
-    pub nameservers: Vec<std::net::SocketAddr>,
+    #[serde(rename = "LocalNetwork")]
+    pub local_network: LocalNetwork,
+    #[serde(rename = "nameservers")]
+    pub nameservers: HashMap<String, bool>,
+    #[serde(skip)]
     pub blocklist: Option<bloomfilter::Bloom<Box<str>>>,
+    #[serde(skip)]
     pub blocklist_builder: HashSet<Box<str>>,
+}
+
+#[derive(Deserialize, Default, Clone)]
+pub struct LocalNetwork {
+    #[serde(flatten)]
+    pub hosts: HashMap<String, std::net::IpAddr>,
+    pub domains: Vec<String>,
+    pub blocklists: Vec<String>,
 }
 
 impl Config {
     pub fn has_addr(&self, value: &str) -> Option<std::net::IpAddr> {
-        for dns in &self.dns {
-            let local = dns.name.as_str();
-            if value == local {
-                return Some(dns.addr);
-            }
-            for domain in &self.domains {
-                let mut local_domain: String = local.into();
-                local_domain.push('.');
-                local_domain.push_str(domain);
+        if let Some(addr) = self.local_network.hosts.get(value) {
+            return Some(*addr);
+        }
 
-                if value == local_domain {
-                    return Some(dns.addr);
-                }
+        for domain in &self.local_network.domains {
+            let mut local_domain: String = value.into();
+            local_domain.push('.');
+            local_domain.push_str(domain);
+            if let Some(addr) = self.local_network.hosts.get(&local_domain) {
+                return Some(*addr);
             }
         }
+
         None
     }
 
@@ -61,6 +52,12 @@ impl Config {
     }
 
     pub fn build_blocklist(&mut self) {
+        for blocklist in self.local_network.blocklists.clone() {
+            if let Err(e) = self.load_blocklist(&blocklist) {
+                eprintln!("Failed to load blocklist {blocklist}: {e}");
+            }
+        }
+
         if self.blocklist_builder.is_empty() {
             println!("Blocklist Size 0");
             return;
@@ -93,6 +90,26 @@ impl Config {
         }
         false
     }
+
+    pub fn get_nameservers(&self) -> Vec<std::net::SocketAddr> {
+        self.nameservers
+            .iter()
+            .filter_map(|(ip, enabled)| {
+                if !enabled {
+                    return None;
+                }
+                let ns: std::net::IpAddr = ip
+                    .parse()
+                    .inspect_err(|e| {
+                        eprintln!(
+                            "nameserver must be a valid IP address: skipping {ip}: error: {e}"
+                        );
+                    })
+                    .ok()?;
+                Some(std::net::SocketAddr::new(ns, 53))
+            })
+            .collect()
+    }
 }
 
 impl std::str::FromStr for Config {
@@ -100,71 +117,13 @@ impl std::str::FromStr for Config {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let file = std::fs::read_to_string(s)?;
-        let toml: toml::Table = toml::from_str(&file)?;
-
-        let mut config = Self::default();
-
-        for (key, value) in toml {
-            match key.to_lowercase().as_str() {
-                "localnetwork" | "localnetworks" => {
-                    let ln = value.as_table().expect("LocalNetwork must be a table");
-                    for (name, addr) in ln {
-                        if name == "domains" {
-                            let domains = addr.as_array().expect("domains must be an array");
-                            for domain in domains {
-                                let domain = domain.as_str().expect("domain must be a string");
-                                config.domains.push(domain.to_string());
-                            }
-                            continue;
-                        }
-                        if name == "blocklists" {
-                            let blocklists = addr.as_array().expect("blocklists must be an array");
-                            for blocklist in blocklists {
-                                let blocklist =
-                                    blocklist.as_str().expect("blocklist must be a string");
-                                _ = config.load_blocklist(blocklist).inspect_err(|e| {
-                                    eprintln!("Failed to load blocklist {blocklist}: {e}");
-                                });
-                            }
-                            continue;
-                        }
-                        let addr = addr.as_str().expect("dns addr must be a string");
-                        let addr: std::net::IpAddr =
-                            addr.parse().expect("dns addr must be a valid IP address");
-                        let dns_cfg = (name, addr).into();
-                        config.dns.push(dns_cfg);
-                    }
-                }
-                "nameservers" => {
-                    println!("{value:?}");
-                    let nameservers = value.as_table().expect("nameservers must be an array");
-                    config.nameservers = nameservers
-                        .iter()
-                        .filter_map(|(ip, val)| {
-                            if !val.as_bool()? {
-                                return None;
-                            };
-                            let ns: std::net::IpAddr = ip
-                                .parse()
-                                .inspect_err(|e| {
-                                    eprintln!("nameserver must be a valid IP address: skipping {ip}: error: {e}");
-                                })
-                                .ok()?;
-                            println!("found nameserver: {ns}");
-                            Some(std::net::SocketAddr::new(ns, 53))
-                        })
-                        .collect();
-                }
-                val => {
-                    bail!("Unknown toml entry key: {val}");
-                }
-            }
-        }
+        let mut config: Self = toml::from_str(&file)?;
 
         if config.nameservers.is_empty() {
             bail!("No nameservers specified");
         }
 
+        config.build_blocklist();
         Ok(config)
     }
 }

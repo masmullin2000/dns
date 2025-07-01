@@ -12,7 +12,7 @@ run: (dev)
 run-rel target triple=(arch() + "-unknown-linux-musl"): (rel target)
     sudo ./target/{{triple}}/release/dns
 
-clippy type:
+clippy type="stable":
     cargo +{{type}} clippy -- -D clippy::pedantic -D clippy::nursery
 
 clean:
