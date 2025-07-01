@@ -1,8 +1,8 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 
-#[derive(Deserialize, Default, Clone)]
+#[derive(Deserialize, Default, Clone, Debug)]
 pub struct Config {
     #[serde(rename = "LocalNetwork")]
     pub local_network: LocalNetwork,
@@ -14,12 +14,12 @@ pub struct Config {
     pub blocklist_builder: HashSet<Box<str>>,
 }
 
-#[derive(Deserialize, Default, Clone)]
+#[derive(Deserialize, Default, Clone, Debug)]
 pub struct LocalNetwork {
     #[serde(flatten)]
     pub hosts: HashMap<String, std::net::IpAddr>,
-    pub domains: Vec<String>,
-    pub blocklists: Vec<String>,
+    pub domains: Option<Vec<String>>,
+    pub blocklists: Option<Vec<String>>,
 }
 
 impl Config {
@@ -28,36 +28,55 @@ impl Config {
             return Some(*addr);
         }
 
-        for domain in &self.local_network.domains {
-            let mut local_domain: String = value.into();
-            local_domain.push('.');
-            local_domain.push_str(domain);
-            if let Some(addr) = self.local_network.hosts.get(&local_domain) {
-                return Some(*addr);
+        let Some(domains) = &self.local_network.domains else {
+            return None;
+        };
+
+        for domain in domains {
+            for (host_str, host_val) in &self.local_network.hosts {
+                if value.len() == host_str.len() + 1 + domain.len()
+                    && value.starts_with(host_str)
+                    && value[host_str.len()..].starts_with('.')
+                    && value.ends_with(domain)
+                {
+                    return Some(*host_val);
+                }
             }
         }
 
         None
     }
 
-    fn load_blocklist(&mut self, block_file: &str) -> Result<()> {
+    fn load_blocklist_file(&mut self, block_file: &str) -> Result<()> {
         let file = std::fs::read_to_string(block_file)?;
         for line in file.lines() {
-            if !line.is_empty() && line.starts_with("*.") {
-                let name = &line[2..];
-                self.blocklist_builder.insert(name.into());
-            }
+            self.insert_blocklist_item(line);
         }
         Ok(())
     }
 
-    pub fn build_blocklist(&mut self) {
-        for blocklist in self.local_network.blocklists.clone() {
-            if let Err(e) = self.load_blocklist(&blocklist) {
-                eprintln!("Failed to load blocklist {blocklist}: {e}");
-            }
+    pub fn insert_blocklist_item(&mut self, item: &str) {
+        if item.is_empty() {
+        } else if let Some(name) = item.strip_prefix("*.") {
+            self.blocklist_builder.insert(name.into());
+        } else {
+            self.blocklist_builder.insert(item.into());
         }
+    }
 
+    pub fn read_blocklists(&mut self) {
+        let Some(blocklists) = self.local_network.blocklists.clone() else {
+            println!("Blocklist Size 0");
+            return;
+        };
+        for blocklist in blocklists {
+            _ = self.load_blocklist_file(&blocklist).inspect_err(|e| {
+                eprintln!("Failed to load blocklist {blocklist}: {e}");
+            });
+        }
+    }
+
+    pub fn build_blocklist(&mut self) {
         if self.blocklist_builder.is_empty() {
             println!("Blocklist Size 0");
             return;
@@ -116,14 +135,14 @@ impl std::str::FromStr for Config {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let file = std::fs::read_to_string(s)?;
-        let mut config: Self = toml::from_str(&file)?;
+        let mut config: Self = toml::from_str(s).inspect_err(|e| println!("error: {e}"))?;
 
-        if config.nameservers.is_empty() {
-            bail!("No nameservers specified");
-        }
-
+        config.read_blocklists();
         config.build_blocklist();
         Ok(config)
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit_tests/config.rs"]
+mod test;

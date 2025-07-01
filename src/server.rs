@@ -48,16 +48,17 @@ fn udp_sock(addr: impl AsRef<str>) -> Result<net::UdpSocket> {
 }
 
 trait DnsAnswers {
-    fn check(&self, config: &Config) -> Option<dns::ResourceRecord>;
+    fn check(&self, config: &Config) -> Option<dns::ResourceRecord<'_>>;
 }
 
 impl DnsAnswers for dns::Question<'_> {
     fn check(&self, config: &Config) -> Option<dns::ResourceRecord<'_>> {
+        const TTL: u32 = 300; // 5 minutes
         let name = self.qname.to_string();
 
         let addr = if config.has_block(&name) {
             //println!("Blocked: {name}");
-            std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1))
+            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
         } else if let Some(addr) = config.has_addr(&name) {
             addr
         } else {
@@ -74,15 +75,13 @@ impl DnsAnswers for dns::Question<'_> {
         Some(dns::ResourceRecord::new(
             self.qname.clone(),
             class,
-            300,
+            TTL,
             rdata,
         ))
     }
 }
 
 async fn process_dns_request(config: Arc<Config>, bytes: &[u8]) -> Result<Vec<u8>> {
-    const MAX_PKT_SIZE: usize = 65535;
-
     let Ok(pkt) = dns::Packet::parse(bytes) else {
         anyhow::bail!("Failed to parse DNS packet");
     };
@@ -108,6 +107,8 @@ async fn process_dns_request(config: Arc<Config>, bytes: &[u8]) -> Result<Vec<u8
     }
 
     let futures = config.get_nameservers().into_iter().map(|ns| {
+        const MAX_PKT_SIZE: usize = 65535;
+
         let mut rec_buf = vec![0u8; MAX_PKT_SIZE];
         Box::pin(async move {
             let Ok(dns_sock) = net::UdpSocket::bind("0.0.0.0:0").await else {
@@ -197,10 +198,10 @@ pub async fn tcp_server(config: Arc<Config>) -> anyhow::Result<()> {
         while let Some((bytes, mut sock)) = rx.recv().await {
             let config = config.clone();
             tokio::spawn(async move {
-                if let Ok(reply_data) = process_dns_request(config, &bytes).await {
-                    if let Err(e) = sock.write_all(&reply_data).await {
-                        eprintln!("Failed to send DNS packet to {sock:?}: {e}");
-                    }
+                if let Ok(reply_data) = process_dns_request(config, &bytes).await
+                    && let Err(e) = sock.write_all(&reply_data).await
+                {
+                    eprintln!("Failed to send DNS packet to {sock:?}: {e}");
                 }
             });
         }
