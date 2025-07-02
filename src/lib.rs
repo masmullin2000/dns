@@ -9,10 +9,12 @@ use std::sync::{Arc, RwLock};
 use config::Config;
 use dns_cache::Cache;
 use server::{tcp_server, udp_server};
+use tracing::{error, info};
 
 pub async fn run(cfg_str: &str) -> anyhow::Result<()> {
     let config: Config = std::fs::read_to_string(cfg_str)?.parse()?;
     let config = Arc::new(config);
+    info!("Loaded DNS configuration from {cfg_str}");
 
     let cache: Cache = Cache::default();
     let cache = Arc::new(RwLock::new(cache));
@@ -32,7 +34,7 @@ pub async fn run(cfg_str: &str) -> anyhow::Result<()> {
     let csh = cache.clone();
     tokio::spawn(async move {
         if let Err(e) = udp_server(cfg, csh) {
-            eprintln!("udp_server failed: {e}");
+            error!("UDP server failed: {e}");
         }
     });
     tcp_server(config, cache).await

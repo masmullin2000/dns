@@ -1,6 +1,7 @@
 use anyhow::Result;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
+use tracing::{debug, error, warn};
 
 #[derive(Deserialize, Default, Clone, Debug)]
 pub struct Config {
@@ -64,32 +65,31 @@ impl Config {
 
     pub fn read_blocklists(&mut self) {
         let Some(blocklists) = self.local_network.blocklists.clone() else {
-            println!("Blocklist Size 0");
             return;
         };
         for blocklist in blocklists {
             _ = self.load_blocklist_file(&blocklist).inspect_err(|e| {
-                eprintln!("Failed to load blocklist {blocklist}: {e}");
+                error!("Failed to load blocklist {blocklist}: {e}");
             });
         }
     }
 
     pub fn build_blocklist(&mut self) {
         if self.blocklist_builder.is_empty() {
-            println!("Blocklist Size 0");
+            warn!("Blocklist Size 0");
             return;
         }
         let Ok(mut blocklist) =
             bloomfilter::Bloom::new_for_fp_rate(self.blocklist_builder.len(), 0.001)
         else {
-            eprintln!("Failed to create bloom filter for blocklist: blocklist inoperable");
+            error!("Failed to create bloom filter for blocklist: blocklist inoperable");
             return;
         };
         for item in &self.blocklist_builder {
             blocklist.set(item);
         }
         self.blocklist = Some(blocklist);
-        println!("Blocklist Size {}", self.blocklist_builder.len());
+        debug!("Blocklist Size {}", self.blocklist_builder.len());
         self.blocklist_builder.clear();
         self.blocklist_builder.shrink_to_fit();
     }
@@ -122,9 +122,7 @@ impl Config {
                 let ns: std::net::IpAddr = ip
                     .parse()
                     .inspect_err(|e| {
-                        eprintln!(
-                            "nameserver must be a valid IP address: skipping {ip}: error: {e}"
-                        );
+                        error!("nameserver must be a valid IP address: skipping {ip}: error: {e}");
                     })
                     .ok()?;
                 Some(std::net::SocketAddr::new(ns, 53))
@@ -137,7 +135,7 @@ impl std::str::FromStr for Config {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut config: Self = toml::from_str(s).inspect_err(|e| println!("error: {e}"))?;
+        let mut config: Self = toml::from_str(s).inspect_err(|e| error!("error: {e}"))?;
 
         config.read_blocklists();
         config.build_blocklist();
