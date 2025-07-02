@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-bloomfilter = "1"
+bloomfilter = "3"
 crossbeam-channel = "0.5"
 futures = "0.3"
 simple-dns = "0.10"

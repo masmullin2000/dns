@@ -79,8 +79,12 @@ impl Config {
             println!("Blocklist Size 0");
             return;
         }
-        let mut blocklist =
-            bloomfilter::Bloom::new_for_fp_rate(self.blocklist_builder.len(), 0.001);
+        let Ok(mut blocklist) =
+            bloomfilter::Bloom::new_for_fp_rate(self.blocklist_builder.len(), 0.001)
+        else {
+            eprintln!("Failed to create bloom filter for blocklist: blocklist inoperable");
+            return;
+        };
         for item in &self.blocklist_builder {
             blocklist.set(item);
         }
