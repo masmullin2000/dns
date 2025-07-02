@@ -1,4 +1,6 @@
-use std::sync::Arc;
+use std::{
+    sync::{Arc, RwLock},
+};
 
 use anyhow::Result;
 use futures::future::select_all;
@@ -10,7 +12,7 @@ use tokio::{
     time::timeout,
 };
 
-use crate::config::Config;
+use crate::{config::Config, dns_cache};
 
 const ADDR: &str = "0.0.0.0:53";
 const LOCAL_ADDR: &str = "127.0.0.53:53";
@@ -48,18 +50,33 @@ fn udp_sock(addr: impl AsRef<str>) -> Result<net::UdpSocket> {
 }
 
 trait DnsAnswers {
-    fn check(&self, config: &Config) -> Option<dns::ResourceRecord<'_>>;
+    fn check(
+        &self,
+        config: &Config,
+        cache: &Arc<RwLock<dns_cache::Cache>>,
+    ) -> Option<Vec<dns::ResourceRecord<'_>>>;
 }
 
 impl DnsAnswers for dns::Question<'_> {
-    fn check(&self, config: &Config) -> Option<dns::ResourceRecord<'_>> {
+    fn check(
+        &self,
+        config: &Config,
+        cache: &Arc<RwLock<dns_cache::Cache>>,
+    ) -> Option<Vec<dns::ResourceRecord<'_>>> {
         const TTL: u32 = 300; // 5 minutes
         let name = self.qname.to_string();
 
+        #[allow(
+            clippy::significant_drop_tightening,
+            clippy::significant_drop_in_scrutinee
+        )]
         let addr = if config.has_block(&name) {
             //println!("Blocked: {name}");
-            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+            vec![std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)]
         } else if let Some(addr) = config.has_addr(&name) {
+            vec![addr]
+        } else if let Some(addr) = cache.read().unwrap().get(&name) {
+            println!("Cache hit: {name}:{addr:?}");
             addr
         } else {
             return None;
@@ -68,28 +85,40 @@ impl DnsAnswers for dns::Question<'_> {
             dns::QCLASS::CLASS(class) => class,
             dns::QCLASS::ANY => dns::CLASS::NONE,
         };
-        let rdata = match addr {
-            std::net::IpAddr::V4(addr) => dns::rdata::RData::A(dns::rdata::A::from(addr)),
-            std::net::IpAddr::V6(addr) => dns::rdata::RData::AAAA(dns::rdata::AAAA::from(addr)),
-        };
-        Some(dns::ResourceRecord::new(
-            self.qname.clone(),
-            class,
-            TTL,
-            rdata,
-        ))
+        Some(
+            addr.into_iter()
+                .map(|addr| {
+                    let rdata = match addr {
+                        std::net::IpAddr::V4(addr) => {
+                            dns::rdata::RData::A(dns::rdata::A::from(addr))
+                        }
+                        std::net::IpAddr::V6(addr) => {
+                            dns::rdata::RData::AAAA(dns::rdata::AAAA::from(addr))
+                        }
+                    };
+                    dns::ResourceRecord::new(self.qname.clone(), class, TTL, rdata)
+                })
+                .collect(),
+        )
     }
 }
 
-async fn process_dns_request(config: Arc<Config>, bytes: &[u8]) -> Result<Vec<u8>> {
+async fn process_dns_request(
+    config: &Config,
+    cache: &Arc<RwLock<dns_cache::Cache>>,
+    bytes: &[u8],
+) -> Result<Vec<u8>> {
     let Ok(pkt) = dns::Packet::parse(bytes) else {
         anyhow::bail!("Failed to parse DNS packet");
     };
 
+    cache.write().unwrap().prune();
+
     let answers: Vec<_> = pkt
         .questions
         .iter()
-        .filter_map(|question| question.check(&config))
+        .filter_map(|question| question.check(config, cache))
+        .flatten()
         .collect();
 
     if !answers.is_empty() {
@@ -125,7 +154,43 @@ async fn process_dns_request(config: Arc<Config>, bytes: &[u8]) -> Result<Vec<u8
                 return Err(anyhow::anyhow!("Timeout when connecting to {ns}"));
             };
             let data = &rec_buf[..sz];
-            if dns::Packet::parse(data).is_ok() {
+            if let Ok(pkt) = dns::Packet::parse(data) {
+                if let Some(question) = pkt.questions.first() {
+                    let qname = &question.qname;
+                    for rr in pkt.answers {
+                        let ttl = rr.ttl;
+                        if ttl == 0 {
+                            continue;
+                        }
+                        match rr.rdata {
+                            dns::rdata::RData::A(a) => {
+                                let addr =
+                                    std::net::IpAddr::V4(std::net::Ipv4Addr::from(a.address));
+                                cache
+                                    .write()
+                                    .unwrap()
+                                    .insert(qname.to_string(), dns_cache::IpAddr::new(addr, ttl));
+                                println!(
+                                    "{qname}:{ttl} A: {}",
+                                    std::net::Ipv4Addr::from(a.address)
+                                );
+                            }
+                            dns::rdata::RData::AAAA(a) => {
+                                let addr =
+                                    std::net::IpAddr::V6(std::net::Ipv6Addr::from(a.address));
+                                cache
+                                    .write()
+                                    .unwrap()
+                                    .insert(qname.to_string(), dns_cache::IpAddr::new(addr, ttl));
+                                println!(
+                                    "{qname}:{ttl} AAAA: {}",
+                                    std::net::Ipv6Addr::from(a.address)
+                                );
+                            }
+                            _ => (),
+                        }
+                    }
+                }
                 return Ok(data.to_vec());
             }
             Err(anyhow::anyhow!("Failed to parse DNS packet"))
@@ -138,7 +203,7 @@ async fn process_dns_request(config: Arc<Config>, bytes: &[u8]) -> Result<Vec<u8
     }
 }
 
-pub fn udp_server(config: Arc<Config>) -> Result<()> {
+pub fn udp_server(config: Arc<Config>, cache: Arc<RwLock<dns_cache::Cache>>) -> Result<()> {
     let remote_sock = Arc::new(udp_sock(ADDR)?);
     let local_sock = Arc::new(udp_sock(LOCAL_ADDR)?);
 
@@ -147,12 +212,13 @@ pub fn udp_server(config: Arc<Config>) -> Result<()> {
     tokio::spawn(async move {
         while let Some(channel_data) = rx.recv().await {
             let config = config.clone();
+            let cache = cache.clone();
             tokio::spawn(async move {
                 let bytes = channel_data.bytes;
                 let addr = channel_data.addr;
                 let sock = channel_data.sock;
 
-                if let Ok(reply_data) = process_dns_request(config, &bytes).await {
+                if let Ok(reply_data) = process_dns_request(&config, &cache, &bytes).await {
                     _ = sock.send_to(&reply_data, &addr).await.inspect_err(|e| {
                         eprintln!("Failed to send DNS packet to {addr}: {e}");
                     });
@@ -182,7 +248,10 @@ pub fn udp_server(config: Arc<Config>) -> Result<()> {
     Ok(())
 }
 
-pub async fn tcp_server(config: Arc<Config>) -> anyhow::Result<()> {
+pub async fn tcp_server(
+    config: Arc<Config>,
+    cache: Arc<RwLock<dns_cache::Cache>>,
+) -> anyhow::Result<()> {
     let dur = std::time::Duration::from_millis(250);
     let sock = net::TcpListener::bind("0.0.0.0:53")
         .await
@@ -197,8 +266,9 @@ pub async fn tcp_server(config: Arc<Config>) -> anyhow::Result<()> {
     tokio::spawn(async move {
         while let Some((bytes, mut sock)) = rx.recv().await {
             let config = config.clone();
+            let cache = cache.clone();
             tokio::spawn(async move {
-                if let Ok(reply_data) = process_dns_request(config, &bytes).await
+                if let Ok(reply_data) = process_dns_request(&config, &cache, &bytes).await
                     && let Err(e) = sock.write_all(&reply_data).await
                 {
                     eprintln!("Failed to send DNS packet to {sock:?}: {e}");
