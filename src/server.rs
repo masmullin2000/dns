@@ -9,7 +9,7 @@ use tokio::{
     sync::mpsc,
     time::timeout,
 };
-use tracing::{debug, error, info, trace, warn};
+use tracing::{error, info, trace, warn};
 
 use crate::{config::Config, dns_cache};
 
@@ -72,12 +72,12 @@ impl DnsAnswers for dns::Question<'_> {
             clippy::significant_drop_in_scrutinee
         )]
         let addr = if config.has_block(&name) {
-            trace!("Blocked domain: {name}");
+            info!("Blocked domain: {name}");
             vec![std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)]
         } else if let Some(addr) = config.has_addr(&name) {
             vec![addr]
         } else if let Some(addr) = cache.read().expect("cache read lock poisoned").get(&name) {
-            debug!("Cache hit for {name}: {addr:?}");
+            trace!("Cache hit for {name}: {addr:?}");
             addr
         } else {
             return None;
