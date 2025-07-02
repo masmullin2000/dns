@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 
 #[cfg(any(target_env = "msvc", target_os = "freebsd"))]
-use std::alloc::Syatem as Malloc;
+use std::alloc::System as Malloc;
 #[cfg(not(any(target_env = "msvc", target_os = "freebsd")))]
 use tikv_jemallocator::Jemalloc as Malloc;
 

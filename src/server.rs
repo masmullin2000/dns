@@ -1,6 +1,4 @@
-use std::{
-    sync::{Arc, RwLock},
-};
+use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
 use futures::future::select_all;
@@ -77,7 +75,7 @@ impl DnsAnswers for dns::Question<'_> {
         } else if let Some(addr) = config.has_addr(&name) {
             vec![addr]
         } else if let Some(addr) = cache.read().unwrap().get(&name) {
-            println!("Cache hit: {name}:{addr:?}");
+            // println!("Cache hit: {name}:{addr:?}");
             addr
         } else {
             return None;
@@ -163,17 +161,16 @@ async fn process_dns_request(
                         }
                         match rr.rdata {
                             dns::rdata::RData::A(a) => {
-                                let ttl = 5u32;
                                 let addr =
                                     std::net::IpAddr::V4(std::net::Ipv4Addr::from(a.address));
                                 cache
                                     .write()
                                     .unwrap()
                                     .insert(qname.to_string(), dns_cache::IpAddr::new(addr, ttl));
-                                println!(
-                                    "{qname}:{ttl} A: {}",
-                                    std::net::Ipv4Addr::from(a.address)
-                                );
+                                // println!(
+                                //     "{qname}:{ttl} A: {}",
+                                //     std::net::Ipv4Addr::from(a.address)
+                                // );
                             }
                             dns::rdata::RData::AAAA(a) => {
                                 let addr =
@@ -182,10 +179,10 @@ async fn process_dns_request(
                                     .write()
                                     .unwrap()
                                     .insert(qname.to_string(), dns_cache::IpAddr::new(addr, ttl));
-                                println!(
-                                    "{qname}:{ttl} AAAA: {}",
-                                    std::net::Ipv6Addr::from(a.address)
-                                );
+                                // println!(
+                                //     "{qname}:{ttl} AAAA: {}",
+                                //     std::net::Ipv6Addr::from(a.address)
+                                // );
                             }
                             _ => (),
                         }
