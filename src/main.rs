@@ -16,9 +16,14 @@ struct Args {
     /// Location of the DNS configuration file
     #[clap(short, long, default_value = "/opt/dns/dns.toml")]
     config: String,
+
     /// Logging level for the DNS server (e.g., debug, info, warn, error, trace)
     #[clap(short, long, default_value = "info")]
     log_level: String,
+
+    /// Loging to journald, if available
+    #[clap(short, long, default_value_t = false)]
+    journald: bool,
 }
 
 fn parse_log_level(level: &str) -> tracing::Level {
@@ -36,17 +41,19 @@ fn parse_log_level(level: &str) -> tracing::Level {
 fn main() -> Result<()> {
     let args = Args::parse();
     // Initialize structured logging
-    let env_filter = tracing_subscriber::EnvFilter::builder()
-        .with_default_directive(parse_log_level(&args.log_level).into())
-        .from_env_lossy();
 
-    let layer = tracing_journald::layer().expect("Failed to create journald tracing");
-
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
-        .with(env_filter)
-        .with(layer)
-        .init();
+    let reg = tracing_subscriber::registry();
+    if args.journald {
+        let layer = tracing_journald::layer().expect("Failed to create journald tracing");
+        reg.with(layer).init();
+    } else {
+        let filter = tracing_subscriber::EnvFilter::builder()
+            .with_default_directive(parse_log_level(&args.log_level).into())
+            .from_env_lossy();
+        reg.with(tracing_subscriber::fmt::layer())
+            .with(filter)
+            .init();
+    }
 
     std::panic::set_hook(Box::new(|p| {
         error!("DNS server panic: {p:?}");
