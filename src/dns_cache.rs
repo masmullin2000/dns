@@ -21,14 +21,26 @@ pub struct Cache(HashMap<String, Vec<IpAddr>>);
 
 impl Cache {
     pub fn get(&self, key: &str) -> Option<Vec<std::net::IpAddr>> {
-        // for value in self.0.get(key)? {
-        //     if value.ttl > std::time::SystemTime::now() {
-        //         return Some(value.ip);
-        //     }
-        // }
-        // None
-        Some(self.0.get(key)?.iter().map(|e| e.ip).collect())
+        let addrs: Vec<_> = self
+            .0
+            .get(key)?
+            .iter()
+            .filter_map(|value| {
+                if value.ttl > std::time::SystemTime::now() {
+                    Some(value.ip)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if addrs.is_empty() {
+            return None;
+        }
+
+        Some(addrs)
     }
+
     pub fn insert(&mut self, key: String, value: IpAddr) {
         self.0
             .entry(key)
@@ -37,6 +49,7 @@ impl Cache {
             })
             .or_insert_with(|| vec![value]);
     }
+
     pub fn prune(&mut self) {
         let now = std::time::SystemTime::now();
         self.0.retain(|_, ips| {
@@ -44,10 +57,4 @@ impl Cache {
             !ips.is_empty()
         });
     }
-    // pub fn remove(&mut self, key: &str) {
-    //     self.0.remove(key);
-    // }
-    // pub fn clear(&mut self) {
-    //     self.0.clear();
-    // }
 }

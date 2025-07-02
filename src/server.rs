@@ -64,6 +64,7 @@ impl DnsAnswers for dns::Question<'_> {
         cache: &Arc<RwLock<dns_cache::Cache>>,
     ) -> Option<Vec<dns::ResourceRecord<'_>>> {
         const TTL: u32 = 300; // 5 minutes
+        //
         let name = self.qname.to_string();
 
         #[allow(
@@ -111,8 +112,6 @@ async fn process_dns_request(
     let Ok(pkt) = dns::Packet::parse(bytes) else {
         anyhow::bail!("Failed to parse DNS packet");
     };
-
-    cache.write().unwrap().prune();
 
     let answers: Vec<_> = pkt
         .questions
@@ -164,6 +163,7 @@ async fn process_dns_request(
                         }
                         match rr.rdata {
                             dns::rdata::RData::A(a) => {
+                                let ttl = 5u32;
                                 let addr =
                                     std::net::IpAddr::V4(std::net::Ipv4Addr::from(a.address));
                                 cache

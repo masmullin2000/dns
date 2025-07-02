@@ -17,10 +17,23 @@ pub async fn run(cfg_str: &str) -> anyhow::Result<()> {
     let cache: Cache = Cache::default();
     let cache = Arc::new(RwLock::new(cache));
 
+    let cache_clone = cache.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            if let Ok(mut cache) = cache_clone.write() {
+                cache.prune();
+            }
+        }
+    });
+
     let cfg = config.clone();
     let csh = cache.clone();
     tokio::spawn(async move {
-        udp_server(cfg, csh).expect("udp_server failed");
+        if let Err(e) = udp_server(cfg, csh) {
+            eprintln!("udp_server failed: {e}");
+        }
     });
     tcp_server(config, cache).await
 }

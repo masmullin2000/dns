@@ -33,13 +33,11 @@ impl Config {
         };
 
         for domain in domains {
-            for (host_str, host_val) in &self.local_network.hosts {
-                if value.len() == host_str.len() + 1 + domain.len()
-                    && value.starts_with(host_str)
-                    && value[host_str.len()..].starts_with('.')
-                    && value.ends_with(domain)
-                {
-                    return Some(*host_val);
+            if value.ends_with(domain) {
+                let host_len = value.len() - domain.len() - 1;
+                let host_str = &value[0..host_len];
+                if let Some(addr) = self.local_network.hosts.get(host_str) {
+                    return Some(*addr);
                 }
             }
         }
