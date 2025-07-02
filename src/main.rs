@@ -45,7 +45,10 @@ fn main() -> Result<()> {
     let reg = tracing_subscriber::registry();
     if args.journald {
         let layer = tracing_journald::layer().expect("Failed to create journald tracing");
-        reg.with(layer).init();
+        let filter = tracing_subscriber::EnvFilter::builder()
+            .with_default_directive(parse_log_level(&args.log_level).into())
+            .from_env_lossy();
+        reg.with(layer).with(filter).init();
     } else {
         let filter = tracing_subscriber::EnvFilter::builder()
             .with_default_directive(parse_log_level(&args.log_level).into())
