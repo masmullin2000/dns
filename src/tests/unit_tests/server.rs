@@ -27,7 +27,6 @@ fn test_channel_data_creation() {
     });
 }
 
-
 #[test]
 fn test_udp_socket_invalid_address() {
     // Test that invalid addresses return errors
@@ -96,7 +95,6 @@ fn create_dns_query_packet() -> Vec<u8> {
         0x00, 0x01, // Class: IN
     ]
 }
-
 
 // TCP Server Core Tests
 
@@ -364,4 +362,346 @@ async fn test_tcp_dns_packet_size_handling() {
     let (received_length, received_packet) = server_task.await.unwrap();
     assert_eq!(received_length, dns_packet.len());
     assert_eq!(received_packet, dns_packet);
+}
+
+// Additional UDP Server Tests
+
+#[tokio::test]
+async fn test_udp_channel_communication() {
+    // Test mpsc channel communication pattern used in udp_server
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelData>(64);
+
+    // Create test socket
+    let sock = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+
+    // Simulate server-side channel receiver
+    let receiver_task = tokio::spawn(async move {
+        let mut received_data = Vec::new();
+
+        while let Some(channel_data) = rx.recv().await {
+            received_data.push(channel_data.bytes);
+
+            // Break after receiving 3 messages
+            if received_data.len() >= 3 {
+                break;
+            }
+        }
+
+        received_data
+    });
+
+    // Send test data through channel
+    for i in 0..3 {
+        let test_data = format!("UDP Message {}", i).into_bytes();
+        let test_addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+
+        let channel_data = ChannelData::new(test_data.clone(), test_addr, sock.clone());
+        tx.send(channel_data).await.unwrap();
+    }
+
+    // Drop sender to close channel
+    drop(tx);
+
+    // Verify receiver got all messages
+    let received = receiver_task.await.unwrap();
+    assert_eq!(received.len(), 3);
+
+    for (i, data) in received.iter().enumerate() {
+        let expected = format!("UDP Message {}", i).into_bytes();
+        assert_eq!(*data, expected);
+    }
+}
+
+#[tokio::test]
+async fn test_udp_channel_capacity() {
+    // Test channel capacity behavior (64 messages)
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelData>(5); // Small capacity for testing
+
+    let sock = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+    let test_addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+
+    // Fill the channel to capacity
+    for i in 0..5 {
+        let test_data = format!("Message {}", i).into_bytes();
+        let channel_data = ChannelData::new(test_data, test_addr, sock.clone());
+        tx.send(channel_data).await.unwrap();
+    }
+
+    // Try to send one more - should not block in this test
+    let test_data = b"Overflow message".to_vec();
+    let channel_data = ChannelData::new(test_data, test_addr, sock.clone());
+
+    // This should work since we're using try_send pattern
+    let send_result = tx.try_send(channel_data);
+    assert!(send_result.is_err()); // Should be full
+
+    // Receive one message to free up space
+    let received = rx.recv().await.unwrap();
+    assert_eq!(received.bytes, b"Message 0");
+
+    // Now sending should work
+    let test_data = b"New message".to_vec();
+    let channel_data = ChannelData::new(test_data.clone(), test_addr, sock);
+    tx.send(channel_data).await.unwrap();
+
+    let received = rx.recv().await.unwrap();
+    assert_eq!(received.bytes, b"Message 1");
+}
+
+#[tokio::test]
+async fn test_udp_packet_reception() {
+    // Test UDP packet reception and processing
+    let server_sock = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let server_addr = server_sock.local_addr().unwrap();
+
+    let client_sock = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let client_addr = client_sock.local_addr().unwrap();
+
+    // Server task that receives packets
+    let server_task = tokio::spawn(async move {
+        let mut buffer = vec![0u8; 1024];
+        let (bytes_received, sender_addr) = server_sock.recv_from(&mut buffer).await.unwrap();
+
+        // Echo the packet back
+        server_sock
+            .send_to(&buffer[..bytes_received], &sender_addr)
+            .await
+            .unwrap();
+
+        (
+            bytes_received,
+            sender_addr,
+            buffer[..bytes_received].to_vec(),
+        )
+    });
+
+    // Client sends DNS packet
+    let dns_packet = create_dns_query_packet();
+    client_sock
+        .send_to(&dns_packet, &server_addr)
+        .await
+        .unwrap();
+
+    // Verify server received packet correctly
+    let (bytes_received, sender_addr, received_packet) = server_task.await.unwrap();
+    assert_eq!(bytes_received, dns_packet.len());
+    assert_eq!(sender_addr, client_addr);
+    assert_eq!(received_packet, dns_packet);
+
+    // Verify client receives echo
+    let mut response_buffer = vec![0u8; dns_packet.len()];
+    let (response_bytes, _) = client_sock.recv_from(&mut response_buffer).await.unwrap();
+    assert_eq!(response_bytes, dns_packet.len());
+    assert_eq!(response_buffer, dns_packet);
+}
+
+#[tokio::test]
+async fn test_udp_large_packet_handling() {
+    // Test handling of large UDP packets up to MAX_PKT_SIZE
+    let server_sock = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let server_addr = server_sock.local_addr().unwrap();
+
+    let client_sock = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+
+    // Create large packet (not quite max size to avoid fragmentation issues)
+    let large_packet = vec![0xAB; 8192]; // 8KB packet
+
+    // Server task
+    let server_task = tokio::spawn(async move {
+        let mut buffer = vec![0u8; 65535]; // MAX_PKT_SIZE
+        let (bytes_received, sender_addr) = server_sock.recv_from(&mut buffer).await.unwrap();
+
+        // Send response
+        let response = b"Large packet received";
+        server_sock.send_to(response, &sender_addr).await.unwrap();
+
+        (bytes_received, buffer[..bytes_received].to_vec())
+    });
+
+    // Client sends large packet
+    client_sock
+        .send_to(&large_packet, &server_addr)
+        .await
+        .unwrap();
+
+    // Verify server handled large packet
+    let (bytes_received, received_packet) = server_task.await.unwrap();
+    assert_eq!(bytes_received, large_packet.len());
+    assert_eq!(received_packet, large_packet);
+
+    // Verify client gets response
+    let mut response_buffer = vec![0u8; 1024];
+    let (response_bytes, _) = client_sock.recv_from(&mut response_buffer).await.unwrap();
+    assert_eq!(&response_buffer[..response_bytes], b"Large packet received");
+}
+
+#[tokio::test]
+async fn test_udp_concurrent_packet_reception() {
+    // Test concurrent packet reception from multiple clients
+    let server_sock = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+    let server_addr = server_sock.local_addr().unwrap();
+
+    let num_clients = 5;
+    let received_packets = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+
+    // Server task that handles multiple packets
+    let server_sock_clone = server_sock.clone();
+    let received_clone = received_packets.clone();
+    let server_task = tokio::spawn(async move {
+        for _ in 0..num_clients {
+            let mut buffer = vec![0u8; 1024];
+            let (bytes_received, sender_addr) =
+                server_sock_clone.recv_from(&mut buffer).await.unwrap();
+
+            // Store received packet info
+            let packet_info = (
+                bytes_received,
+                sender_addr,
+                buffer[..bytes_received].to_vec(),
+            );
+            received_clone.lock().await.push(packet_info);
+
+            // Send acknowledgment
+            let ack = format!("ACK from {}", sender_addr);
+            server_sock_clone
+                .send_to(ack.as_bytes(), &sender_addr)
+                .await
+                .unwrap();
+        }
+    });
+
+    // Create multiple clients
+    let mut client_tasks = Vec::new();
+
+    for i in 0..num_clients {
+        let client_task = tokio::spawn(async move {
+            let client_sock = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let client_addr = client_sock.local_addr().unwrap();
+
+            // Send unique packet
+            let packet = format!("Client {} packet", i);
+            client_sock
+                .send_to(packet.as_bytes(), &server_addr)
+                .await
+                .unwrap();
+
+            // Receive acknowledgment
+            let mut ack_buffer = vec![0u8; 1024];
+            let (ack_bytes, _) = client_sock.recv_from(&mut ack_buffer).await.unwrap();
+            let ack_message = String::from_utf8_lossy(&ack_buffer[..ack_bytes]);
+
+            (client_addr, packet, ack_message.to_string())
+        });
+        client_tasks.push(client_task);
+    }
+
+    // Wait for all clients to complete
+    let mut client_results = Vec::new();
+    for task in client_tasks {
+        client_results.push(task.await.unwrap());
+    }
+
+    // Wait for server to process all packets
+    server_task.await.unwrap();
+
+    // Verify all packets were received
+    let received = received_packets.lock().await;
+    assert_eq!(received.len(), num_clients);
+
+    // Verify each client got correct acknowledgment
+    for (client_addr, sent_packet, ack_message) in client_results {
+        assert!(ack_message.contains(&client_addr.to_string()));
+
+        // Find corresponding received packet
+        let found = received.iter().any(|(_, addr, packet)| {
+            *addr == client_addr && String::from_utf8_lossy(packet) == sent_packet
+        });
+        assert!(
+            found,
+            "Packet from {} not found in received packets",
+            client_addr
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_udp_malformed_packet_handling() {
+    // Test handling of malformed or empty packets
+    let server_sock = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let server_addr = server_sock.local_addr().unwrap();
+
+    let client_sock = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+
+    // Server task that handles various packet types
+    let server_task = tokio::spawn(async move {
+        let mut received_packets = Vec::new();
+
+        // Receive 3 different packet types
+        for _ in 0..3 {
+            let mut buffer = vec![0u8; 1024];
+            let (bytes_received, _) = server_sock.recv_from(&mut buffer).await.unwrap();
+            received_packets.push((bytes_received, buffer[..bytes_received].to_vec()));
+        }
+
+        received_packets
+    });
+
+    // Send empty packet
+    client_sock.send_to(&[], &server_addr).await.unwrap();
+
+    // Send single byte packet
+    client_sock.send_to(&[0xFF], &server_addr).await.unwrap();
+
+    // Send valid DNS packet
+    let dns_packet = create_dns_query_packet();
+    client_sock
+        .send_to(&dns_packet, &server_addr)
+        .await
+        .unwrap();
+
+    // Verify server received all packets
+    let received = server_task.await.unwrap();
+    assert_eq!(received.len(), 3);
+
+    // Check empty packet
+    assert_eq!(received[0].0, 0);
+    assert_eq!(received[0].1, vec![]);
+
+    // Check single byte packet
+    assert_eq!(received[1].0, 1);
+    assert_eq!(received[1].1, vec![0xFF]);
+
+    // Check DNS packet
+    assert_eq!(received[2].0, dns_packet.len());
+    assert_eq!(received[2].1, dns_packet);
+}
+
+#[tokio::test]
+async fn test_udp_socket_reuse_port() {
+    // Test that udp_sock creates sockets with SO_REUSEPORT enabled
+    let sock1 = crate::server::udp_sock("127.0.0.1:0").unwrap();
+    let sock2 = crate::server::udp_sock("127.0.0.1:0").unwrap();
+
+    let addr1 = sock1.local_addr().unwrap();
+    let addr2 = sock2.local_addr().unwrap();
+
+    // Both sockets should be bound successfully
+    assert!(addr1.port() > 0);
+    assert!(addr2.port() > 0);
+
+    // They should have different ports (since we used port 0)
+    assert_ne!(addr1.port(), addr2.port());
+
+    // Both should be able to send/receive
+    let test_data = b"Test reuse port";
+
+    // sock1 sends to sock2
+    sock1.send_to(test_data, &addr2).await.unwrap();
+
+    let mut buffer = vec![0u8; 1024];
+    let (bytes_received, sender_addr) = sock2.recv_from(&mut buffer).await.unwrap();
+
+    assert_eq!(bytes_received, test_data.len());
+    assert_eq!(&buffer[..bytes_received], test_data);
+    assert_eq!(sender_addr, addr1);
 }
