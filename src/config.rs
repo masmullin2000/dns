@@ -3,16 +3,16 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use tracing::{debug, error, warn};
 
-#[derive(Deserialize, Default, Clone, Debug)]
+#[derive(Deserialize, Default, Debug)]
 pub struct Config {
     #[serde(rename = "LocalNetwork")]
     pub local_network: LocalNetwork,
     #[serde(rename = "nameservers")]
     pub nameservers: HashMap<String, bool>,
     #[serde(skip)]
-    pub blocklist: Option<bloomfilter::Bloom<Box<str>>>,
+    pub blocklist: Option<bloomfilter::Bloom<str>>,
     #[serde(skip)]
-    pub blocklist_builder: HashSet<Box<str>>,
+    pub blocklist_builder: HashSet<String>,
 }
 
 #[derive(Deserialize, Default, Clone, Debug)]
@@ -86,7 +86,7 @@ impl Config {
             return;
         };
         for item in &self.blocklist_builder {
-            blocklist.set(item);
+            blocklist.set(item.as_str());
         }
         self.blocklist = Some(blocklist);
         debug!("Blocklist Size {}", self.blocklist_builder.len());
@@ -100,7 +100,7 @@ impl Config {
         };
         let mut name = value;
         while !name.is_empty() {
-            if blocklist.check(&name.into()) {
+            if blocklist.check(name) {
                 return true;
             }
             if let Some((_, value)) = name.split_once('.') {
