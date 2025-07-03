@@ -39,3 +39,6 @@ pub async fn run(cfg_str: &str) -> anyhow::Result<()> {
     });
     tcp_server(config, cache).await
 }
+
+#[cfg(test)]
+mod tests;

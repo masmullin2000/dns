@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use crate::Config;
+use crate::config::Config;
 
 #[test]
 fn test_config_from_str_valid() {

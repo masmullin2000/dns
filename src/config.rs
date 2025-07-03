@@ -143,6 +143,3 @@ impl std::str::FromStr for Config {
     }
 }
 
-#[cfg(test)]
-#[path = "../tests/unit_tests/config.rs"]
-mod test;

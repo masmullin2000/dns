@@ -20,18 +20,18 @@ const MAX_PKT_SIZE: usize = 65535;
 type Sender = mpsc::Sender<ChannelData>;
 
 pub struct ChannelData {
-    bytes: Vec<u8>,
-    addr: std::net::SocketAddr,
-    sock: Arc<net::UdpSocket>,
+    pub bytes: Vec<u8>,
+    pub addr: std::net::SocketAddr,
+    pub sock: Arc<net::UdpSocket>,
 }
 
 impl ChannelData {
-    const fn new(bytes: Vec<u8>, addr: std::net::SocketAddr, sock: Arc<net::UdpSocket>) -> Self {
+    pub const fn new(bytes: Vec<u8>, addr: std::net::SocketAddr, sock: Arc<net::UdpSocket>) -> Self {
         Self { bytes, addr, sock }
     }
 }
 
-fn udp_sock(addr: impl AsRef<str>) -> Result<net::UdpSocket> {
+pub fn udp_sock(addr: impl AsRef<str>) -> Result<net::UdpSocket> {
     let sock = socket2::Socket::new(
         socket2::Domain::IPV4,
         socket2::Type::DGRAM,
