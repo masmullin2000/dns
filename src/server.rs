@@ -26,7 +26,11 @@ pub struct ChannelData {
 }
 
 impl ChannelData {
-    pub const fn new(bytes: Vec<u8>, addr: std::net::SocketAddr, sock: Arc<net::UdpSocket>) -> Self {
+    pub const fn new(
+        bytes: Vec<u8>,
+        addr: std::net::SocketAddr,
+        sock: Arc<net::UdpSocket>,
+    ) -> Self {
         Self { bytes, addr, sock }
     }
 }
@@ -306,7 +310,7 @@ pub async fn tcp_server(
     }
 }
 
-trait Eof {
+pub trait Eof {
     async fn read_eof(&mut self) -> anyhow::Result<Vec<u8>>;
 }
 
@@ -323,6 +327,9 @@ impl Eof for net::TcpStream {
             }
 
             buf.extend_from_slice(data);
+            if buf.len() < 2 {
+                continue; // Not enough data to parse a DNS packet
+            }
             if dns::Packet::parse(&buf[2..]).is_ok() {
                 break;
             }
