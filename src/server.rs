@@ -295,14 +295,6 @@ pub async fn tcp_server(
             }
         };
 
-        // let Ok(buf) = timeout(dur, Box::pin(sock.read_eof()))
-        //     .await
-        //     .inspect_err(|e| {
-        //         eprintln!("Failed to receive DNS packet from {sock:?}: {e}");
-        //     })
-        // else {
-        //     continue;
-        // };
         if let Err(e) = tx.send((buf, sock)).await {
             error!("Failed to send TCP data to channel: {e}");
             anyhow::bail!("Channel send failed: {e}");
