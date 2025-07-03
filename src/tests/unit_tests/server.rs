@@ -579,7 +579,7 @@ async fn test_udp_concurrent_packet_reception() {
             let client_addr = client_sock.local_addr().unwrap();
 
             // Send unique packet
-            let packet = format!("Client {} packet", i);
+            let packet = format!("Client {i} packet");
             client_sock
                 .send_to(packet.as_bytes(), &server_addr)
                 .await
@@ -618,8 +618,7 @@ async fn test_udp_concurrent_packet_reception() {
         });
         assert!(
             found,
-            "Packet from {} not found in received packets",
-            client_addr
+            "Packet from {client_addr} not found in received packets",
         );
     }
 }
@@ -937,4 +936,52 @@ async fn test_tcp_read_eof_incremental_dns_parsing() {
     let (received_data, parse_result) = server_task.await.unwrap();
     assert_eq!(received_data, full_data);
     assert!(parse_result, "DNS packet should parse correctly");
+}
+
+#[tokio::test]
+async fn test_tcp_malformed_length_prefix() {
+    // Test handling of malformed TCP length prefix in read_eof
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let server_addr = listener.local_addr().unwrap();
+
+    let server_task = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+
+        // Use read_eof which tries to parse DNS packets
+        let read_result = stream.read_eof().await;
+
+        match read_result {
+            Ok(data) => ("success", data.len()),
+            Err(_) => ("error", 0),
+        }
+    });
+
+    let client_task = tokio::spawn(async move {
+        let mut client_stream = TcpStream::connect(server_addr).await.unwrap();
+
+        // Send malformed length prefix (claims huge packet size)
+        let fake_length: u16 = 0xFFFF; // 65535 bytes
+        client_stream
+            .write_all(&fake_length.to_be_bytes())
+            .await
+            .unwrap();
+
+        // Send only a tiny bit of actual data
+        let small_data = b"tiny";
+        client_stream.write_all(small_data).await.unwrap();
+        client_stream.shutdown().await.unwrap();
+
+        2 + small_data.len() // length prefix + data
+    });
+
+    let (server_result, client_bytes_sent) = tokio::join!(server_task, client_task);
+    let (result_type, bytes_received) = server_result.unwrap();
+    let bytes_sent = client_bytes_sent.unwrap();
+
+    // Server should receive the data without crashing, even if DNS parsing fails
+    assert_eq!(
+        result_type, "success",
+        "Should handle malformed data gracefully"
+    );
+    assert_eq!(bytes_received, bytes_sent, "Should receive all sent bytes");
 }
