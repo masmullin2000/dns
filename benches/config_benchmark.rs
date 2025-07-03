@@ -11,10 +11,11 @@ fn setup_config(num_domains: usize) -> config::Config {
 
     let mut domains = Vec::new();
     for i in 0..num_domains {
-        domains.push(format!("domain{}.com", i));
+        domains.push(format!("domain{i}.com"));
     }
 
-    let domains = domains.into_iter().map(|d| d.to_string()).collect();
+    // do this so we can easily switch to a different collection
+    let domains = domains.into_iter().collect();
 
     config::Config {
         local_network: config::LocalNetwork {
@@ -89,8 +90,16 @@ fn benchmark_has_block(c: &mut Criterion) {
         b.iter(|| config.has_block("sub.anotherblockeddomain.com"))
     });
 
+    group.bench_function("sub-subdomain of blocked domain", |b| {
+        b.iter(|| config.has_block("1234.sub.anotherblockeddomain.com"))
+    });
+
     group.bench_function("not blocked domain", |b| {
         b.iter(|| config.has_block("example.com"))
+    });
+
+    group.bench_function("not blocked domain w/www", |b| {
+        b.iter(|| config.has_block("www.example.com"))
     });
 
     group.bench_function("long not blocked domain", |b| {
@@ -109,4 +118,3 @@ criterion_group!(
     benchmark_has_block
 );
 criterion_main!(benches);
-

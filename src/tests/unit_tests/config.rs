@@ -95,10 +95,7 @@ fn test_config_has_addr_domain_match() {
         .hosts
         .insert("myhost".to_string(), "192.168.1.100".parse().unwrap());
 
-    let hs = ["local"]
-        .iter()
-        .map(|&i| String::from(i))
-        .collect();
+    let hs = ["local"].iter().map(|&i| String::from(i)).collect();
 
     config.local_network.domains = Some(hs);
 
@@ -131,6 +128,8 @@ fn test_config_has_block_blocked() {
     config.insert_blocklist_item("blocked.com");
     config.build_blocklist();
 
+    assert!(config.has_block("b.a.test.blocked.com"));
+    assert!(config.has_block("a.test.blocked.com"));
     assert!(config.has_block("test.blocked.com"));
     assert!(config.has_block("blocked.com"));
 }

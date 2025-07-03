@@ -103,6 +103,9 @@ impl Config {
         let Some(ref blocklist) = self.blocklist else {
             return false;
         };
+
+        // a reverse check would be faster for the case where
+        // we should return true, however that's the minority case.
         let mut name = value;
         while !name.is_empty() {
             if blocklist.check(name) {
@@ -114,6 +117,7 @@ impl Config {
                 break;
             }
         }
+
         false
     }
 
