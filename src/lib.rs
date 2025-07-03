@@ -1,6 +1,6 @@
 #![allow(clippy::missing_panics_doc, clippy::missing_errors_doc)]
 
-mod config;
+pub mod config;
 mod dns_cache;
 mod server;
 

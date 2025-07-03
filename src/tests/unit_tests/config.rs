@@ -94,7 +94,13 @@ fn test_config_has_addr_domain_match() {
         .local_network
         .hosts
         .insert("myhost".to_string(), "192.168.1.100".parse().unwrap());
-    config.local_network.domains = Some(vec!["local".to_string()]);
+
+    let hs = ["local"]
+        .iter()
+        .map(|&i| String::from(i))
+        .collect();
+
+    config.local_network.domains = Some(hs);
 
     let addr = config
         .has_addr("myhost.local")

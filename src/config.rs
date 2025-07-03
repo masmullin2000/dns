@@ -33,6 +33,9 @@ impl Config {
             return None;
         };
 
+        // Having the domains be a hashset would be more performant,
+        // if there are lots of domains.  But the amount of domains
+        // will usually be small, so a Vec is preferred.
         for domain in domains {
             if value.ends_with(domain) {
                 let host_len = value.len() - domain.len() - 1;
