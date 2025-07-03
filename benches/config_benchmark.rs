@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 
 use lib::config;
 
@@ -14,10 +14,7 @@ fn setup_config(num_domains: usize) -> config::Config {
         domains.push(format!("domain{}.com", i));
     }
 
-    let domains = domains
-        .into_iter()
-        .map(|d| d.to_string())
-        .collect();
+    let domains = domains.into_iter().map(|d| d.to_string()).collect();
 
     config::Config {
         local_network: config::LocalNetwork {
@@ -50,6 +47,7 @@ fn benchmark_has_addr(c: &mut Criterion) {
     group.finish();
 }
 
+// this benchmark is more realistic
 fn benchmark_has_addr_short(c: &mut Criterion) {
     let config = setup_config(3);
     let mut group = c.benchmark_group("has_addr");
@@ -69,5 +67,46 @@ fn benchmark_has_addr_short(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, benchmark_has_addr, benchmark_has_addr_short);
+fn setup_config_with_blocklist(num_block_items: usize) -> config::Config {
+    let mut config = config::Config::default();
+    for i in 0..num_block_items {
+        config.insert_blocklist_item(&format!("blockeddomain{}.com", i));
+    }
+    config.insert_blocklist_item("anotherblockeddomain.com");
+    config.build_blocklist();
+    config
+}
+
+fn benchmark_has_block(c: &mut Criterion) {
+    let config = setup_config_with_blocklist(1000);
+    let mut group = c.benchmark_group("has_block");
+
+    group.bench_function("blocked domain", |b| {
+        b.iter(|| config.has_block("anotherblockeddomain.com"))
+    });
+
+    group.bench_function("subdomain of blocked domain", |b| {
+        b.iter(|| config.has_block("sub.anotherblockeddomain.com"))
+    });
+
+    group.bench_function("not blocked domain", |b| {
+        b.iter(|| config.has_block("example.com"))
+    });
+
+    group.bench_function("long not blocked domain", |b| {
+        b.iter(|| {
+            config.has_block("a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q.r.s.t.u.v.w.x.y.z.example.com")
+        })
+    });
+
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    benchmark_has_addr,
+    benchmark_has_addr_short,
+    benchmark_has_block
+);
 criterion_main!(benches);
+

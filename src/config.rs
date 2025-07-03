@@ -24,6 +24,7 @@ pub struct LocalNetwork {
 }
 
 impl Config {
+    #[must_use]
     pub fn has_addr(&self, value: &str) -> Option<std::net::IpAddr> {
         if let Some(addr) = self.local_network.hosts.get(value) {
             return Some(*addr);
@@ -97,6 +98,7 @@ impl Config {
         self.blocklist_builder.shrink_to_fit();
     }
 
+    #[must_use]
     pub fn has_block(&self, value: &str) -> bool {
         let Some(ref blocklist) = self.blocklist else {
             return false;
@@ -115,6 +117,7 @@ impl Config {
         false
     }
 
+    #[must_use]
     pub fn get_nameservers(&self) -> Vec<std::net::SocketAddr> {
         self.nameservers
             .iter()
