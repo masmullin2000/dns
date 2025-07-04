@@ -16,6 +16,8 @@ pub struct Config {
     pub blocklist_builder: HashSet<String>,
     #[serde(skip)]
     pub block_filter: Option<bloomfilter::Bloom<str>>,
+    #[serde(skip)]
+    pub cached_nameservers: Vec<std::net::SocketAddr>,
 }
 
 #[derive(Deserialize, Default, Debug)]
@@ -101,7 +103,7 @@ impl Config {
             return;
         }
         let Ok(mut filter) =
-            bloomfilter::Bloom::new_for_fp_rate(self.blocklist_builder.len(), 0.0001)
+            bloomfilter::Bloom::new_for_fp_rate(self.blocklist_builder.len(), 0.00001)
         else {
             error!("Failed to create bloom filter for blocklist: blocklist inoperable");
             return;
@@ -113,6 +115,27 @@ impl Config {
         debug!("Blocklist Size {}", self.blocklist_builder.len());
         self.blocklist_builder.clear();
         self.blocklist_builder.shrink_to_fit();
+    }
+
+    pub fn cache_nameservers(&mut self) {
+        self.cached_nameservers = self
+            .nameservers
+            .ip4
+            .iter()
+            .filter_map(|ip| {
+                let ns: std::net::IpAddr = ip
+                    .parse()
+                    .inspect_err(|e| {
+                        error!("nameserver must be a valid IP address: skipping {ip}: error: {e}");
+                    })
+                    .ok()?;
+                Some(std::net::SocketAddr::new(ns, 53))
+            })
+            .collect();
+
+        self.nameservers.ip4.clear();
+        self.nameservers.ip4.shrink_to_fit();
+        debug!("Cached {} nameservers", self.cached_nameservers.len());
     }
 
     #[must_use]
@@ -139,20 +162,8 @@ impl Config {
     }
 
     #[must_use]
-    pub fn get_nameservers(&self) -> Vec<std::net::SocketAddr> {
-        self.nameservers
-            .ip4
-            .iter()
-            .filter_map(|ip| {
-                let ns: std::net::IpAddr = ip
-                    .parse()
-                    .inspect_err(|e| {
-                        error!("nameserver must be a valid IP address: skipping {ip}: error: {e}");
-                    })
-                    .ok()?;
-                Some(std::net::SocketAddr::new(ns, 53))
-            })
-            .collect()
+    pub fn get_nameservers(&self) -> &[std::net::SocketAddr] {
+        &self.cached_nameservers
     }
 }
 
@@ -164,6 +175,7 @@ impl std::str::FromStr for Config {
 
         config.read_blocklists();
         config.build_blocklist();
+        config.cache_nameservers();
         Ok(config)
     }
 }

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::str::FromStr;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 
@@ -108,10 +109,33 @@ fn benchmark_has_block(c: &mut Criterion) {
     group.finish();
 }
 
+fn benchmark_get_nameservers(c: &mut Criterion) {
+    let config = setup_config_with_nameservers();
+    let mut group = c.benchmark_group("get_nameservers");
+
+    group.bench_function("cached nameservers", |b| {
+        b.iter(|| config.get_nameservers())
+    });
+
+    group.finish();
+}
+
+fn setup_config_with_nameservers() -> config::Config {
+    let toml_content = r#"
+[local_network]
+
+[nameservers]
+ip4 = ["1.1.1.1", "8.8.8.8", "208.67.222.222", "208.67.220.220"]
+"#;
+
+    config::Config::from_str(toml_content).expect("Failed to parse config")
+}
+
 criterion_group!(
     benches,
     benchmark_has_addr,
     benchmark_has_addr_short,
-    benchmark_has_block
+    benchmark_has_block,
+    benchmark_get_nameservers
 );
 criterion_main!(benches);

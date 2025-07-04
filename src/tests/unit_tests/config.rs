@@ -136,6 +136,7 @@ fn test_config_has_block_blocked() {
     assert!(config.has_block("blocked.com"));
 }
 
+/// This test may fail occasionally due to the nature of the bloomfilters
 #[test]
 fn test_config_has_block_not_blocked() {
     let mut config = Config::default();

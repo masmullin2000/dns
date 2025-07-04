@@ -138,7 +138,7 @@ async fn process_dns_request(
         return Ok(reply_data);
     }
 
-    let futures = config.get_nameservers().into_iter().map(|ns| {
+    let futures = config.get_nameservers().iter().map(|&ns| {
         let mut rec_buf = vec![0u8; MAX_PKT_SIZE];
         Box::pin(async move {
             let Ok(dns_sock) = net::UdpSocket::bind("0.0.0.0:0").await else {
