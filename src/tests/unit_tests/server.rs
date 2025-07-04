@@ -1,3 +1,4 @@
+use simple_dns::{Name, Packet, QCLASS, QTYPE, Question};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
@@ -8,22 +9,15 @@ use crate::server::{self, ChannelData, Eof};
 
 // Helper function to create a minimal DNS query packet
 fn create_dns_query_packet() -> Vec<u8> {
-    // Simple DNS query for "example.com" A record
-    // This is a minimal valid DNS packet for testing
-    vec![
-        0x00, 0x1c, // ID
-        0x01, 0x00, // Flags (standard query)
-        0x00, 0x01, // Questions: 1
-        0x00, 0x00, // Answer RRs: 0
-        0x00, 0x00, // Authority RRs: 0
-        0x00, 0x00, // Additional RRs: 0
-        // Query: example.com
-        0x07, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, // "example"
-        0x03, 0x63, 0x6f, 0x6d, // "com"
-        0x00, // End of name
-        0x00, 0x01, // Type: A
-        0x00, 0x01, // Class: IN
-    ]
+    let mut packet = Packet::new_query(1);
+    let question = Question::new(
+        Name::new_unchecked("example.com"),
+        QTYPE::TYPE(simple_dns::TYPE::A),
+        QCLASS::CLASS(simple_dns::CLASS::IN),
+        true,
+    );
+    packet.questions.push(question);
+    packet.build_bytes_vec().unwrap()
 }
 
 // Tests for project-specific ChannelData struct
@@ -407,4 +401,148 @@ async fn test_tcp_read_eof_malformed_data() {
         "Should handle malformed data gracefully"
     );
     assert_eq!(bytes_received, bytes_sent, "Should receive all sent bytes");
+}
+
+// Tests for project-specific Eof::read_dns
+#[tokio::test]
+async fn test_read_dns_success() {
+    // Test reading a complete and valid DNS packet
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let server_addr = listener.local_addr().unwrap();
+
+    let server_task = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        stream.read_dns().await
+    });
+
+    // Client sends a valid DNS packet with TCP length prefix
+    let mut client_stream = TcpStream::connect(server_addr).await.unwrap();
+    let dns_packet = create_dns_query_packet();
+    let packet_length = dns_packet.len() as u16;
+
+    // Send TCP DNS format: 2-byte length prefix + DNS packet
+    let mut packet_with_len = packet_length.to_be_bytes().to_vec();
+    packet_with_len.extend_from_slice(&dns_packet);
+
+    client_stream.write_all(&packet_with_len).await.unwrap();
+    // The server should break reading after a valid packet, so we don't need to close the client stream yet.
+    // Let's add more data to make sure it only reads one packet.
+    client_stream.write_all(b"some extra data").await.unwrap();
+
+    let received_result = server_task.await.unwrap();
+    assert!(received_result.is_ok());
+    let received_data = received_result.unwrap();
+
+    assert_eq!(received_data, packet_with_len);
+}
+
+#[tokio::test]
+async fn test_read_dns_incomplete_packet() {
+    // Test that an error is returned if the connection is closed before a full packet is received
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let server_addr = listener.local_addr().unwrap();
+
+    let server_task = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        stream.read_dns().await
+    });
+
+    // Client sends an incomplete DNS packet
+    let mut client_stream = TcpStream::connect(server_addr).await.unwrap();
+    let dns_packet = create_dns_query_packet();
+    let incomplete_packet = &dns_packet[..10];
+    let packet_length = dns_packet.len() as u16; // correct length, but incomplete data
+
+    let mut packet_with_len = packet_length.to_be_bytes().to_vec();
+    packet_with_len.extend_from_slice(incomplete_packet);
+
+    client_stream.write_all(&packet_with_len).await.unwrap();
+    client_stream.shutdown().await.unwrap(); // Close stream
+
+    let received_result = server_task.await.unwrap();
+    assert!(received_result.is_err());
+    assert_eq!(
+        received_result.unwrap_err().to_string(),
+        "EOF reached while reading DNS packet"
+    );
+}
+
+#[tokio::test]
+async fn test_read_dns_empty_stream() {
+    // Test that an error is returned for an empty, closed stream
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let server_addr = listener.local_addr().unwrap();
+
+    let server_task = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        stream.read_dns().await
+    });
+
+    // Client connects and immediately closes
+    let client_stream = TcpStream::connect(server_addr).await.unwrap();
+    drop(client_stream);
+
+    let received_result = server_task.await.unwrap();
+    assert!(received_result.is_err());
+    assert_eq!(
+        received_result.unwrap_err().to_string(),
+        "EOF reached while reading DNS packet"
+    );
+}
+
+#[tokio::test]
+async fn test_read_dns_no_data_after_length() {
+    // Test that an error is returned if the stream closes after sending the length prefix but no data
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let server_addr = listener.local_addr().unwrap();
+
+    let server_task = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        stream.read_dns().await
+    });
+
+    let mut client_stream = TcpStream::connect(server_addr).await.unwrap();
+    let dns_packet = create_dns_query_packet();
+    let packet_length = dns_packet.len() as u16;
+    client_stream
+        .write_all(&packet_length.to_be_bytes())
+        .await
+        .unwrap();
+    client_stream.shutdown().await.unwrap(); // Close stream
+
+    let received_result = server_task.await.unwrap();
+    assert!(received_result.is_err());
+    assert_eq!(
+        received_result.unwrap_err().to_string(),
+        "EOF reached while reading DNS packet"
+    );
+}
+
+#[tokio::test]
+async fn test_read_dns_malformed_packet() {
+    // Test that read_dns returns an error for a malformed packet because dns_break will never be true
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let server_addr = listener.local_addr().unwrap();
+
+    let server_task = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        stream.read_dns().await
+    });
+
+    let mut client_stream = TcpStream::connect(server_addr).await.unwrap();
+    let malformed_data = b"this is not a dns packet";
+    let packet_length = malformed_data.len() as u16;
+
+    let mut packet_with_len = packet_length.to_be_bytes().to_vec();
+    packet_with_len.extend_from_slice(malformed_data);
+
+    client_stream.write_all(&packet_with_len).await.unwrap();
+    client_stream.shutdown().await.unwrap(); // Close stream
+
+    let received_result = server_task.await.unwrap();
+    assert!(received_result.is_err());
+    assert_eq!(
+        received_result.unwrap_err().to_string(),
+        "EOF reached while reading DNS packet"
+    );
 }
