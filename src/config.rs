@@ -5,22 +5,38 @@ use tracing::{debug, error, warn};
 
 #[derive(Deserialize, Default, Debug)]
 pub struct Config {
-    #[serde(rename = "LocalNetwork")]
     pub local_network: LocalNetwork,
-    #[serde(rename = "nameservers")]
-    pub nameservers: HashMap<String, bool>,
-    #[serde(skip)]
-    pub blocklist: Option<bloomfilter::Bloom<str>>,
+    pub nameservers: Nameservers,
+    #[serde(default = "Domains::default")]
+    pub local_domains: Domains,
+    #[serde(default = "Blocklists::default")]
+    pub blocklists: Blocklists,
+
     #[serde(skip)]
     pub blocklist_builder: HashSet<String>,
+    #[serde(skip)]
+    pub blocklist: Option<bloomfilter::Bloom<str>>,
+}
+
+#[derive(Deserialize, Default, Debug)]
+pub struct Domains {
+    pub domains: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, Default, Debug)]
+pub struct Blocklists {
+    pub files: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, Default, Debug)]
+pub struct Nameservers {
+    pub ip4: HashSet<String>,
 }
 
 #[derive(Deserialize, Default, Clone, Debug)]
 pub struct LocalNetwork {
     #[serde(flatten)]
     pub hosts: HashMap<String, std::net::IpAddr>,
-    pub domains: Option<Vec<String>>,
-    pub blocklists: Option<Vec<String>>,
 }
 
 impl Config {
@@ -30,7 +46,7 @@ impl Config {
             return Some(*addr);
         }
 
-        let Some(domains) = &self.local_network.domains else {
+        let Some(domains) = &self.local_domains.domains else {
             return None;
         };
 
@@ -68,7 +84,8 @@ impl Config {
     }
 
     pub fn read_blocklists(&mut self) {
-        let Some(blocklists) = self.local_network.blocklists.clone() else {
+        let Some(blocklists) = self.blocklists.files.clone() else {
+            warn!("No blocklists defined in config");
             return;
         };
         for blocklist in blocklists {
@@ -84,7 +101,7 @@ impl Config {
             return;
         }
         let Ok(mut blocklist) =
-            bloomfilter::Bloom::new_for_fp_rate(self.blocklist_builder.len(), 0.001)
+            bloomfilter::Bloom::new_for_fp_rate(self.blocklist_builder.len(), 0.0001)
         else {
             error!("Failed to create bloom filter for blocklist: blocklist inoperable");
             return;
@@ -124,11 +141,9 @@ impl Config {
     #[must_use]
     pub fn get_nameservers(&self) -> Vec<std::net::SocketAddr> {
         self.nameservers
+            .ip4
             .iter()
-            .filter_map(|(ip, enabled)| {
-                if !enabled {
-                    return None;
-                }
+            .filter_map(|ip| {
                 let ns: std::net::IpAddr = ip
                     .parse()
                     .inspect_err(|e| {

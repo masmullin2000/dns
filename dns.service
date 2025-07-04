@@ -3,7 +3,7 @@ Description=LocalHost DNS Forwarder
 After=network.target
 
 [Service]
-ExecStart=/opt/dns/dns -l info -j
+ExecStart=/opt/dns/dns -l warn -j
 Restart=on-failure
 
 [Install]

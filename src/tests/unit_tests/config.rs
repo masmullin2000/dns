@@ -5,16 +5,18 @@ use crate::config::Config;
 #[test]
 fn test_config_from_str_valid() {
     let toml_content = r#"
-[LocalNetwork]
+[local_network]
 "tplinkwifi.net" = "192.168.1.1"
 dns = "192.168.0.2"
+
+[local_domains]
 domains = ["local", "home"]
-blocklists = ["./test_blocklist.list"]
 
 [nameservers]
-"1.1.1.1" = true
-"8.8.8.8" = true
-"192.168.0.2" = false
+ip4 = ["1.1.1.1", "8.8.8.8"]
+
+[blocklists]
+files = ["./test_blocklist.list"]
 "#;
 
     // Create a dummy blocklist file for the test
@@ -35,7 +37,7 @@ blocklists = ["./test_blocklist.list"]
         config.local_network.hosts.get("dns").unwrap().to_string(),
         "192.168.0.2"
     );
-    let Some(domains) = &config.local_network.domains else {
+    let Some(domains) = &config.local_domains.domains else {
         panic!("Expected domains to be defined");
     };
     assert!(domains.contains(&"local".to_string()));
@@ -64,7 +66,7 @@ blocklists = ["./test_blocklist.list"]
 #[test]
 fn test_config_from_str_no_nameservers() {
     let toml_content = r#"
-[LocalNetwork]
+[local_network]
 dns = "192.168.0.2"
 "#;
 
@@ -97,14 +99,14 @@ fn test_config_has_addr_domain_match() {
 
     let hs = ["local"].iter().map(|&i| String::from(i)).collect();
 
-    config.local_network.domains = Some(hs);
+    config.local_domains.domains = Some(hs);
 
     let addr = config
         .has_addr("myhost.local")
         .expect("Should find address");
     assert_eq!(addr.to_string(), "192.168.1.100");
 
-    let Some(domains) = &mut config.local_network.domains else {
+    let Some(domains) = &mut config.local_domains.domains else {
         panic!("Expected domains to be defined");
     };
 
@@ -152,12 +154,10 @@ fn test_config_has_block_empty_blocklist() {
 #[test]
 fn test_config_get_nameservers() {
     let toml_content = r#"
-[LocalNetwork]
+[local_network]
 
 [nameservers]
-"1.1.1.1" = true
-"8.8.8.8" = false
-"192.168.0.1" = true
+ip4 = ["1.1.1.1", "192.168.0.1"]
 "#;
 
     let config = Config::from_str(toml_content).expect("Failed to parse config");

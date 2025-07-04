@@ -15,6 +15,12 @@ run-rel target triple=(arch() + "-unknown-linux-musl"): (rel target)
 clippy type="stable":
     cargo +{{type}} clippy -- -D clippy::pedantic -D clippy::nursery
 
+pre:
+    cargo check
+    cargo fmt --check
+    just clippy
+    cargo test
+
 bench:
     cargo bench
 

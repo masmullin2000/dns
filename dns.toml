@@ -1,4 +1,4 @@
-[LocalNetwork]
+[local_network]
 "tplinkwifi.net" = "192.168.1.1"
 dns = "192.168.0.2"
 jup = "192.168.0.3"
@@ -44,10 +44,12 @@ sles4 = "192.168.1.92"
 w11_home = "192.168.50.3"
 w10_work = "192.168.50.4"
 vms = "192.168.5.3"
+
+[local_domains]
 domains = ["local", "home", "lan"]
-blocklists = ["./hagezi.list", "./oisd.list", "./steve.list", "./mine.list"]
+
+[blocklists]
+files = ["./hagezi.list", "./oisd.list", "./steve.list", "./mine.list"]
 
 [nameservers]
-"1.1.1.1" = true 
-"8.8.8.8" = true 
-#"192.168.0.2" = true
+ip4 = ["1.1.1.1", "8.8.8.8"]
