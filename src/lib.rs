@@ -37,7 +37,7 @@ pub async fn run(cfg_str: &str) -> anyhow::Result<()> {
             error!("UDP server failed: {e}");
         }
     });
-    tcp_server(config, cache).await
+    tcp_server(config, cache).await.inspect_err(|e| error!("TCP server failed: {e}"))
 }
 
 #[cfg(test)]

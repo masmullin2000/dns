@@ -1,12 +1,15 @@
 rel target triple=(arch() + "-unknown-linux"):
+    echo {{target}} {{triple}}
     JEMALLOC_SYS_WITH_MALLOC_CONF=narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,abort_conf:true \
     cargo build -r --target {{triple}}-{{target}}
 
-dev:
-    cargo build
+dev target triple=(arch() + "-unknown-linux"):
+    JEMALLOC_SYS_WITH_MALLOC_CONF=narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,abort_conf:true \
+    cargo build --target {{triple}}-{{target}}
 
-run: (dev)
-    cargo run
+run target triple=(arch() + "-unknown-linux"):
+    just dev {{target}} {{triple}}
+    sudo ./target/debug/dns -c ./dns.toml
 
 run-rel target triple=(arch() + "-unknown-linux-musl"): (rel target)
     sudo ./target/{{triple}}/release/dns

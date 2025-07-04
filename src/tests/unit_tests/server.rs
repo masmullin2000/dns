@@ -143,8 +143,7 @@ async fn test_tcp_read_eof_complete_packet() {
         let (mut stream, _) = listener.accept().await.unwrap();
 
         // Use Eof trait to read complete packet
-        let packet_data = stream.read_eof().await.unwrap();
-        packet_data
+        stream.read_eof().await.unwrap()
     });
 
     // Client sends a complete DNS packet with TCP length prefix
@@ -213,8 +212,7 @@ async fn test_tcp_read_eof_detection() {
 
     let server_task = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
-        let packet_data = stream.read_eof().await.unwrap();
-        packet_data
+        stream.read_eof().await.unwrap()
     });
 
     // Client sends partial data then closes
