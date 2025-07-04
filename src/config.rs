@@ -15,7 +15,7 @@ pub struct Config {
     #[serde(skip)]
     pub blocklist_builder: HashSet<String>,
     #[serde(skip)]
-    pub blocklist: Option<bloomfilter::Bloom<str>>,
+    pub block_filter: Option<bloomfilter::Bloom<str>>,
 }
 
 #[derive(Deserialize, Default, Debug)]
@@ -100,16 +100,16 @@ impl Config {
             warn!("Blocklist Size 0");
             return;
         }
-        let Ok(mut blocklist) =
+        let Ok(mut filter) =
             bloomfilter::Bloom::new_for_fp_rate(self.blocklist_builder.len(), 0.0001)
         else {
             error!("Failed to create bloom filter for blocklist: blocklist inoperable");
             return;
         };
         for item in &self.blocklist_builder {
-            blocklist.set(item.as_str());
+            filter.set(item.as_str());
         }
-        self.blocklist = Some(blocklist);
+        self.block_filter = Some(filter);
         debug!("Blocklist Size {}", self.blocklist_builder.len());
         self.blocklist_builder.clear();
         self.blocklist_builder.shrink_to_fit();
@@ -117,7 +117,7 @@ impl Config {
 
     #[must_use]
     pub fn has_block(&self, value: &str) -> bool {
-        let Some(ref blocklist) = self.blocklist else {
+        let Some(ref blocklist) = self.block_filter else {
             return false;
         };
 

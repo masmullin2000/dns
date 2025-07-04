@@ -42,7 +42,7 @@ files = ["./test_blocklist.list"]
     };
     assert!(domains.contains(&"local".to_string()));
     assert!(domains.contains(&"home".to_string()));
-    assert!(config.blocklist.is_some());
+    assert!(config.block_filter.is_some());
     assert!(
         config
             .get_nameservers()

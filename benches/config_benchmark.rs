@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::net::IpAddr;
 
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -18,14 +18,11 @@ fn setup_config(num_domains: usize) -> config::Config {
     let domains = domains.into_iter().collect();
 
     config::Config {
-        local_network: config::LocalNetwork {
-            hosts,
+        local_network: config::LocalNetwork { hosts },
+        local_domains: config::Domains {
             domains: Some(domains),
-            blocklists: None,
         },
-        nameservers: HashMap::new(),
-        blocklist: None,
-        blocklist_builder: HashSet::new(),
+        ..Default::default()
     }
 }
 
@@ -71,7 +68,7 @@ fn benchmark_has_addr_short(c: &mut Criterion) {
 fn setup_config_with_blocklist(num_block_items: usize) -> config::Config {
     let mut config = config::Config::default();
     for i in 0..num_block_items {
-        config.insert_blocklist_item(&format!("blockeddomain{}.com", i));
+        config.insert_blocklist_item(&format!("blockeddomain{i}.com"));
     }
     config.insert_blocklist_item("anotherblockeddomain.com");
     config.build_blocklist();

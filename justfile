@@ -1,4 +1,3 @@
-
 rel target triple=(arch() + "-unknown-linux"):
     JEMALLOC_SYS_WITH_MALLOC_CONF=narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,abort_conf:true \
     cargo build -r --target {{triple}}-{{target}}
@@ -15,7 +14,7 @@ run-rel target triple=(arch() + "-unknown-linux-musl"): (rel target)
 clippy type="stable":
     cargo +{{type}} clippy -- -D clippy::pedantic -D clippy::nursery
 
-pre:
+pre: clean
     cargo check
     cargo fmt --check
     just clippy
@@ -26,7 +25,7 @@ bench:
 
 clean:
     cargo clean
-    rm *.list
+    -rm *.list
 
 lists:
     bash get_lists.sh
