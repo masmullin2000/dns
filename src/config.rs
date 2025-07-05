@@ -116,83 +116,19 @@ impl RuntimeConfig {
     }
 }
 
-impl StartupConfig {
-    pub fn into_runtime(self) -> Result<RuntimeConfig> {
-        let mut blocklist_builder = HashSet::new();
-
-        // Load blocklists
-        if let Some(blocklists) = &self.blocklists.files {
-            for blocklist in blocklists {
-                if let Err(e) = Self::load_blocklist_file(&mut blocklist_builder, blocklist) {
-                    error!("Failed to load blocklist {blocklist}: {e}");
-                }
-            }
-        } else {
-            warn!("No blocklists defined in config");
-        }
-
-        // Build bloom filter
-        let block_filter = if blocklist_builder.is_empty() {
-            warn!("Blocklist Size 0");
-            None
-        } else {
-            let Ok(mut filter) =
-                bloomfilter::Bloom::new_for_fp_rate(blocklist_builder.len(), 0.00001)
-            else {
-                error!("Failed to create bloom filter for blocklist: blocklist inoperable");
-                return Err(anyhow::anyhow!("Failed to create bloom filter"));
-            };
-            for item in &blocklist_builder {
-                filter.set(item.as_str());
-            }
-            debug!("Blocklist Size {}", blocklist_builder.len());
-            Some(filter)
-        };
-
-        // Cache nameservers
-        let cached_nameservers: Vec<std::net::SocketAddr> = self
-            .nameservers
-            .ip4
-            .iter()
-            .filter_map(|ip| {
-                let ns: std::net::IpAddr = ip
-                    .parse()
-                    .inspect_err(|e| {
-                        error!("nameserver must be a valid IP address: skipping {ip}: error: {e}");
-                    })
-                    .ok()?;
-                Some(std::net::SocketAddr::new(ns, 53))
-            })
-            .collect();
-
-        debug!("Cached {} nameservers", cached_nameservers.len());
-
-        Ok(RuntimeConfig {
-            local_network: self.local_network,
-            local_domains: self.local_domains,
-            block_filter,
-            cached_nameservers,
-        })
+fn load_blocklist_file(blocklist_builder: &mut HashSet<String>, block_file: &str) -> Result<()> {
+    let file = std::fs::read_to_string(block_file)?;
+    for line in file.lines() {
+        insert_blocklist_item(blocklist_builder, line);
     }
-
-    fn load_blocklist_file(
-        blocklist_builder: &mut HashSet<String>,
-        block_file: &str,
-    ) -> Result<()> {
-        let file = std::fs::read_to_string(block_file)?;
-        for line in file.lines() {
-            Self::insert_blocklist_item(blocklist_builder, line);
-        }
-        Ok(())
-    }
-
-    fn insert_blocklist_item(blocklist_builder: &mut HashSet<String>, item: &str) {
-        if item.is_empty() {
-        } else if let Some(name) = item.strip_prefix("*.") {
-            blocklist_builder.insert(name.into());
-        } else {
-            blocklist_builder.insert(item.into());
-        }
+    Ok(())
+}
+fn insert_blocklist_item(blocklist_builder: &mut HashSet<String>, item: &str) {
+    if item.is_empty() {
+    } else if let Some(name) = item.strip_prefix("*.") {
+        blocklist_builder.insert(name.into());
+    } else {
+        blocklist_builder.insert(item.into());
     }
 }
 
@@ -333,12 +269,65 @@ impl std::str::FromStr for StartupConfig {
     }
 }
 
-impl std::str::FromStr for RuntimeConfig {
-    type Err = anyhow::Error;
+impl From<StartupConfig> for RuntimeConfig {
+    fn from(startup: StartupConfig) -> Self {
+        let mut blocklist_builder: HashSet<String> = HashSet::new();
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let startup_config: StartupConfig = s.parse()?;
-        startup_config.into_runtime()
+        // Load blocklists
+        if let Some(blocklists) = &startup.blocklists.files {
+            for blocklist in blocklists {
+                if let Err(e) = load_blocklist_file(&mut blocklist_builder, blocklist) {
+                    error!("Failed to load blocklist {blocklist}: {e}");
+                }
+            }
+        } else {
+            warn!("No blocklists defined in config");
+        }
+
+        // Build bloom filter
+        let block_filter = if blocklist_builder.is_empty() {
+            warn!("Blocklist Size 0");
+            None
+        } else {
+            bloomfilter::Bloom::new_for_fp_rate(blocklist_builder.len(), 0.00001).map_or_else(
+                |_| {
+                    error!("Failed to create bloom filter for blocklist: blocklist inoperable");
+                    None
+                },
+                |mut filter| {
+                    for item in &blocklist_builder {
+                        filter.set(item.as_str());
+                    }
+                    debug!("Blocklist Size {}", blocklist_builder.len());
+                    Some(filter)
+                },
+            )
+        };
+
+        // Cache nameservers
+        let cached_nameservers: Vec<std::net::SocketAddr> = startup
+            .nameservers
+            .ip4
+            .into_iter()
+            .filter_map(|ip| {
+                let ns: std::net::IpAddr = ip
+                    .parse()
+                    .inspect_err(|e| {
+                        error!("nameserver must be a valid IP address: skipping {ip}: error: {e}");
+                    })
+                    .ok()?;
+                Some(std::net::SocketAddr::new(ns, 53))
+            })
+            .collect();
+
+        debug!("Cached {} nameservers", cached_nameservers.len());
+
+        Self {
+            local_network: startup.local_network,
+            local_domains: startup.local_domains,
+            block_filter,
+            cached_nameservers,
+        }
     }
 }
 

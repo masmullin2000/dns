@@ -251,8 +251,8 @@ files = ["./test_blocklist_runtime.list"]
     )
     .unwrap();
 
-    let runtime_config =
-        RuntimeConfig::from_str(toml_content).expect("Failed to parse runtime config");
+    let config = StartupConfig::from_str(toml_content).expect("Failed to parse runtime config");
+    let runtime_config: RuntimeConfig = config.into();
 
     assert_eq!(
         runtime_config
@@ -301,9 +301,7 @@ fn test_runtime_config_has_addr_direct_match() {
         .hosts
         .insert("myhost".to_string(), "192.168.1.100".parse().unwrap());
 
-    let runtime_config = startup_config
-        .into_runtime()
-        .expect("Failed to create runtime config");
+    let runtime_config: RuntimeConfig = startup_config.into();
     let addr = runtime_config
         .has_addr("myhost")
         .expect("Should find address");
@@ -321,9 +319,7 @@ fn test_runtime_config_has_addr_domain_match() {
     let hs = ["local"].iter().map(|&i| String::from(i)).collect();
     startup_config.local_domains.domains = Some(hs);
 
-    let runtime_config = startup_config
-        .into_runtime()
-        .expect("Failed to create runtime config");
+    let runtime_config: RuntimeConfig = startup_config.into();
     let addr = runtime_config
         .has_addr("myhost.local")
         .expect("Should find address");
@@ -333,9 +329,7 @@ fn test_runtime_config_has_addr_domain_match() {
 #[test]
 fn test_runtime_config_has_addr_no_match() {
     let startup_config = StartupConfig::default();
-    let runtime_config = startup_config
-        .into_runtime()
-        .expect("Failed to create runtime config");
+    let runtime_config: RuntimeConfig = startup_config.into();
     let addr = runtime_config.has_addr("nonexistent");
     assert!(addr.is_none());
 }
@@ -343,8 +337,6 @@ fn test_runtime_config_has_addr_no_match() {
 #[test]
 fn test_runtime_config_has_block_empty_blocklist() {
     let startup_config = StartupConfig::default();
-    let runtime_config = startup_config
-        .into_runtime()
-        .expect("Failed to create runtime config");
+    let runtime_config: RuntimeConfig = startup_config.into();
     assert!(!runtime_config.has_block("any.domain.com"));
 }
