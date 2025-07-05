@@ -6,13 +6,13 @@ mod server;
 
 use std::sync::{Arc, RwLock};
 
-use config::Config;
+use config::RuntimeConfig;
 use dns_cache::Cache;
 use server::{tcp_server, udp_server};
 use tracing::{error, info};
 
 pub async fn run(cfg_str: &str) -> anyhow::Result<()> {
-    let config: Config = std::fs::read_to_string(cfg_str)?.parse()?;
+    let config: RuntimeConfig = std::fs::read_to_string(cfg_str)?.parse()?;
     let config = Arc::new(config);
     info!("Loaded DNS configuration from {cfg_str}");
 

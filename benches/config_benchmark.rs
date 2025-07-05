@@ -6,7 +6,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 
 use lib::config;
 
-fn setup_config(num_domains: usize) -> config::Config {
+fn setup_config(num_domains: usize) -> config::RuntimeConfig {
     let mut hosts = HashMap::new();
     hosts.insert("test".to_string(), "192.168.1.1".parse::<IpAddr>().unwrap());
 
@@ -18,13 +18,17 @@ fn setup_config(num_domains: usize) -> config::Config {
     // do this so we can easily switch to a different collection
     let domains = domains.into_iter().collect();
 
-    config::Config {
+    let startup_config = config::StartupConfig {
         local_network: config::LocalNetwork { hosts },
         local_domains: config::Domains {
             domains: Some(domains),
         },
         ..Default::default()
-    }
+    };
+
+    startup_config
+        .into_runtime()
+        .expect("Failed to create runtime config")
 }
 
 fn benchmark_has_addr(c: &mut Criterion) {
@@ -66,14 +70,30 @@ fn benchmark_has_addr_short(c: &mut Criterion) {
     group.finish();
 }
 
-fn setup_config_with_blocklist(num_block_items: usize) -> config::Config {
-    let mut config = config::Config::default();
+fn setup_config_with_blocklist(num_block_items: usize) -> config::RuntimeConfig {
+    let mut startup_config = config::StartupConfig::default();
+
+    // Create blocklist content
+    let mut blocklist_content = String::new();
     for i in 0..num_block_items {
-        config.insert_blocklist_item(&format!("blockeddomain{i}.com"));
+        blocklist_content.push_str(&format!("blockeddomain{i}.com\n"));
     }
-    config.insert_blocklist_item("anotherblockeddomain.com");
-    config.build_blocklist();
-    config
+    blocklist_content.push_str("anotherblockeddomain.com\n");
+
+    // Write to a temporary file
+    let temp_file = format!("./temp_blocklist_{}.txt", num_block_items);
+    std::fs::write(&temp_file, blocklist_content).expect("Failed to write temp blocklist file");
+
+    startup_config.blocklists.files = Some(vec![temp_file.clone()]);
+
+    let runtime_config = startup_config
+        .into_runtime()
+        .expect("Failed to create runtime config");
+
+    // Clean up temp file
+    std::fs::remove_file(&temp_file).ok();
+
+    runtime_config
 }
 
 fn benchmark_has_block(c: &mut Criterion) {
@@ -120,7 +140,7 @@ fn benchmark_get_nameservers(c: &mut Criterion) {
     group.finish();
 }
 
-fn setup_config_with_nameservers() -> config::Config {
+fn setup_config_with_nameservers() -> config::RuntimeConfig {
     let toml_content = r#"
 [local_network]
 
@@ -128,7 +148,7 @@ fn setup_config_with_nameservers() -> config::Config {
 ip4 = ["1.1.1.1", "8.8.8.8", "208.67.222.222", "208.67.220.220"]
 "#;
 
-    config::Config::from_str(toml_content).expect("Failed to parse config")
+    config::RuntimeConfig::from_str(toml_content).expect("Failed to parse config")
 }
 
 criterion_group!(

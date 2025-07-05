@@ -21,6 +21,9 @@ pre: clean
     cargo check
     cargo fmt --check
     just clippy
+    just test
+
+test:
     cargo test
 
 bench:

@@ -14,7 +14,7 @@ use tokio::{
 };
 use tracing::{debug, error, info, trace, warn};
 
-use crate::{config::Config, dns_cache};
+use crate::{config::RuntimeConfig, dns_cache};
 
 const ADDR: &str = "0.0.0.0:53";
 const LOCAL_ADDR: &str = "127.0.0.53:53";
@@ -60,7 +60,7 @@ pub fn udp_sock(addr: impl AsRef<str>) -> Result<net::UdpSocket> {
 trait DnsAnswers {
     fn check(
         &self,
-        config: &Config,
+        config: &RuntimeConfig,
         cache: &Arc<RwLock<dns_cache::Cache>>,
     ) -> Option<Vec<dns::ResourceRecord<'_>>>;
 }
@@ -68,7 +68,7 @@ trait DnsAnswers {
 impl DnsAnswers for dns::Question<'_> {
     fn check(
         &self,
-        config: &Config,
+        config: &RuntimeConfig,
         cache: &Arc<RwLock<dns_cache::Cache>>,
     ) -> Option<Vec<dns::ResourceRecord<'_>>> {
         const TTL: u32 = 300; // 5 minutes
@@ -114,7 +114,7 @@ impl DnsAnswers for dns::Question<'_> {
 
 async fn process_dns_request<F>(
     who: &SocketAddr,
-    config: &Config,
+    config: &RuntimeConfig,
     cache: &Arc<RwLock<dns_cache::Cache>>,
     bytes: Vec<u8>,
     dns_start_location: usize, // for TCP this should be 2, for UDP it should be 0
@@ -218,7 +218,7 @@ where
     }
 }
 
-pub fn udp_server(config: Arc<Config>, cache: Arc<RwLock<dns_cache::Cache>>) -> Result<()> {
+pub fn udp_server(config: Arc<RuntimeConfig>, cache: Arc<RwLock<dns_cache::Cache>>) -> Result<()> {
     let remote_sock = Arc::new(udp_sock(ADDR)?);
     let local_sock = Arc::new(udp_sock(LOCAL_ADDR)?);
 
@@ -279,7 +279,7 @@ pub fn udp_server(config: Arc<Config>, cache: Arc<RwLock<dns_cache::Cache>>) -> 
 }
 
 pub async fn tcp_server(
-    config: Arc<Config>,
+    config: Arc<RuntimeConfig>,
     cache: Arc<RwLock<dns_cache::Cache>>,
 ) -> anyhow::Result<()> {
     let sock = net::TcpListener::bind("0.0.0.0:53")
