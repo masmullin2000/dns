@@ -26,9 +26,7 @@ fn setup_config(num_domains: usize) -> config::RuntimeConfig {
         ..Default::default()
     };
 
-    startup_config
-        .into_runtime()
-        .expect("Failed to create runtime config")
+    startup_config.into()
 }
 
 fn benchmark_has_addr(c: &mut Criterion) {
@@ -86,9 +84,7 @@ fn setup_config_with_blocklist(num_block_items: usize) -> config::RuntimeConfig 
 
     startup_config.blocklists.files = Some(vec![temp_file.clone()]);
 
-    let runtime_config = startup_config
-        .into_runtime()
-        .expect("Failed to create runtime config");
+    let runtime_config: config::RuntimeConfig = startup_config.into();
 
     // Clean up temp file
     std::fs::remove_file(&temp_file).ok();
@@ -148,7 +144,9 @@ fn setup_config_with_nameservers() -> config::RuntimeConfig {
 ip4 = ["1.1.1.1", "8.8.8.8", "208.67.222.222", "208.67.220.220"]
 "#;
 
-    config::RuntimeConfig::from_str(toml_content).expect("Failed to parse config")
+    config::StartupConfig::from_str(toml_content)
+        .expect("Failed to parse config")
+        .into()
 }
 
 criterion_group!(

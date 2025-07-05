@@ -436,3 +436,18 @@ impl Eof for net::TcpStream {
         self.read_until(|| Ok(()), |_| None).await
     }
 }
+
+#[cfg(test)]
+pub async fn process_dns_request_test<F>(
+    who: &SocketAddr,
+    config: &RuntimeConfig,
+    cache: &Arc<RwLock<dns_cache::Cache>>,
+    bytes: Vec<u8>,
+    dns_start_location: usize, // for TCP this should be 2, for UDP it should be 0
+    get_data: F,
+) -> Result<Vec<u8>>
+where
+    F: AsyncFn(SocketAddr, &Arc<Vec<u8>>) -> Result<Vec<u8>> + Clone,
+{
+    process_dns_request(who, config, cache, bytes, dns_start_location, get_data).await
+}
