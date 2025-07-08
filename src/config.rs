@@ -146,10 +146,10 @@ impl From<StartupConfig> for RuntimeConfig {
 }
 
 #[derive(Default, Debug)]
-struct BlocklistBuilder(HashSet<String>);
+pub struct BlocklistBuilder(HashSet<String>);
 
 impl BlocklistBuilder {
-    fn set_file(&mut self, block_file: &str) -> Result<()> {
+    pub fn set_file(&mut self, block_file: &str) -> Result<()> {
         let file = std::fs::read_to_string(block_file)?;
         for line in file.lines() {
             self.set_item(line);
@@ -157,7 +157,8 @@ impl BlocklistBuilder {
         Ok(())
     }
 
-    fn set_item(&mut self, item: &str) {
+    pub fn set_item(&mut self, item: &str) {
+        let item = item.trim();
         if item.is_empty() {
         } else if let Some(name) = item.strip_prefix("*.") {
             self.0.insert(name.into());
@@ -166,7 +167,7 @@ impl BlocklistBuilder {
         }
     }
 
-    fn build(self) -> Option<bloomfilter::Bloom<str>> {
+    pub fn build(self) -> Option<bloomfilter::Bloom<str>> {
         if self.0.is_empty() {
             warn!("Blocklist Size 0");
             None
@@ -187,6 +188,21 @@ impl BlocklistBuilder {
                 },
             )
         }
+    }
+
+    #[must_use]
+    pub fn contains(&self, domain: &str) -> bool {
+        self.0.contains(domain)
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 
