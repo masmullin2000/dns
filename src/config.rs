@@ -19,7 +19,7 @@ pub struct RuntimeConfig {
     pub local_network: LocalNetwork,
     pub local_domains: Domains,
     pub block_filter: Option<bloomfilter::Bloom<str>>,
-    pub cached_nameservers: Vec<std::net::SocketAddr>,
+    pub nameservers: Vec<std::net::SocketAddr>,
 }
 
 #[derive(Deserialize, Default, Debug)]
@@ -41,6 +41,17 @@ pub struct Nameservers {
 pub struct LocalNetwork {
     #[serde(flatten)]
     pub hosts: HashMap<String, std::net::IpAddr>,
+}
+
+impl std::str::FromStr for StartupConfig {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        toml::from_str(s).map_err(|e| {
+            error!("error: {e}");
+            anyhow::anyhow!("Failed to parse configuration: {e}")
+        })
+    }
 }
 
 impl RuntimeConfig {
@@ -95,79 +106,25 @@ impl RuntimeConfig {
 
     #[must_use]
     pub fn get_nameservers(&self) -> &[std::net::SocketAddr] {
-        &self.cached_nameservers
-    }
-}
-
-fn load_blocklist_file(blocklist_builder: &mut HashSet<String>, block_file: &str) -> Result<()> {
-    let file = std::fs::read_to_string(block_file)?;
-    for line in file.lines() {
-        insert_blocklist_item(blocklist_builder, line);
-    }
-    Ok(())
-}
-fn insert_blocklist_item(blocklist_builder: &mut HashSet<String>, item: &str) {
-    if item.is_empty() {
-    } else if let Some(name) = item.strip_prefix("*.") {
-        blocklist_builder.insert(name.into());
-    } else {
-        blocklist_builder.insert(item.into());
-    }
-}
-
-impl std::str::FromStr for StartupConfig {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        toml::from_str(s).map_err(|e| {
-            error!("error: {e}");
-            anyhow::anyhow!("Failed to parse configuration: {e}")
-        })
+        &self.nameservers
     }
 }
 
 impl From<StartupConfig> for RuntimeConfig {
     fn from(startup: StartupConfig) -> Self {
-        let mut blocklist_builder: HashSet<String> = HashSet::new();
-
         // Load blocklists
-        if let Some(blocklists) = &startup.blocklists.files {
-            for blocklist in blocklists {
-                if let Err(e) = load_blocklist_file(&mut blocklist_builder, blocklist) {
-                    error!("Failed to load blocklist {blocklist}: {e}");
-                }
-            }
-        } else {
-            warn!("No blocklists defined in config");
-        }
+        let blocklist_builder = BlocklistBuilder::from(startup.blocklists.files);
 
         // Build bloom filter
-        let block_filter = if blocklist_builder.is_empty() {
-            warn!("Blocklist Size 0");
-            None
-        } else {
-            bloomfilter::Bloom::new_for_fp_rate(blocklist_builder.len(), 0.00001).map_or_else(
-                |_| {
-                    error!("Failed to create bloom filter for blocklist: blocklist inoperable");
-                    None
-                },
-                |mut filter| {
-                    for item in &blocklist_builder {
-                        filter.set(item.as_str());
-                    }
-                    debug!("Blocklist Size {}", blocklist_builder.len());
-                    Some(filter)
-                },
-            )
-        };
+        let block_filter = blocklist_builder.build();
 
         // Cache nameservers
-        let cached_nameservers: Vec<std::net::SocketAddr> = startup
+        let nameservers: Vec<_> = startup
             .nameservers
             .ip4
             .into_iter()
             .filter_map(|ip| {
-                let ns: std::net::IpAddr = ip
+                let ns = ip
                     .parse()
                     .inspect_err(|e| {
                         error!("nameserver must be a valid IP address: skipping {ip}: error: {e}");
@@ -177,13 +134,80 @@ impl From<StartupConfig> for RuntimeConfig {
             })
             .collect();
 
-        debug!("Cached {} nameservers", cached_nameservers.len());
+        debug!("Cached {} nameservers", nameservers.len());
 
         Self {
             local_network: startup.local_network,
             local_domains: startup.local_domains,
             block_filter,
-            cached_nameservers,
+            nameservers,
         }
+    }
+}
+
+#[derive(Default, Debug)]
+struct BlocklistBuilder(HashSet<String>);
+
+impl BlocklistBuilder {
+    fn set_file(&mut self, block_file: &str) -> Result<()> {
+        let file = std::fs::read_to_string(block_file)?;
+        for line in file.lines() {
+            self.set_item(line);
+        }
+        Ok(())
+    }
+
+    fn set_item(&mut self, item: &str) {
+        if item.is_empty() {
+        } else if let Some(name) = item.strip_prefix("*.") {
+            self.0.insert(name.into());
+        } else {
+            self.0.insert(item.into());
+        }
+    }
+
+    fn build(self) -> Option<bloomfilter::Bloom<str>> {
+        if self.0.is_empty() {
+            warn!("Blocklist Size 0");
+            None
+        } else {
+            bloomfilter::Bloom::new_for_fp_rate(self.0.len(), 0.00001).map_or_else(
+                |e| {
+                    error!(
+                        "Failed to create bloom filter for blocklist - {e}: blocklist inoperable"
+                    );
+                    None
+                },
+                |mut filter| {
+                    for item in &self.0 {
+                        filter.set(item.as_str());
+                    }
+                    debug!("Blocklist Size {}", self.0.len());
+                    Some(filter)
+                },
+            )
+        }
+    }
+}
+
+impl From<Vec<String>> for BlocklistBuilder {
+    fn from(block_files: Vec<String>) -> Self {
+        let mut builder = Self::default();
+        for block_file in &block_files {
+            if let Err(e) = builder.set_file(block_file) {
+                error!("Failed to load blocklist file {block_file}: {e}");
+            }
+        }
+        builder
+    }
+}
+
+impl From<Option<Vec<String>>> for BlocklistBuilder {
+    fn from(block_files: Option<Vec<String>>) -> Self {
+        let Some(blocklists) = block_files else {
+            warn!("No blocklists defined in config");
+            return Self::default();
+        };
+        Self::from(blocklists)
     }
 }
