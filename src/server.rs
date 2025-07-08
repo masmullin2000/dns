@@ -121,7 +121,7 @@ async fn process_dns_request<F>(
     get_data: F,
 ) -> Result<Vec<u8>>
 where
-    F: AsyncFn(SocketAddr, &Arc<Vec<u8>>) -> Result<Vec<u8>> + Clone,
+    F: AsyncFn(&SocketAddr, &Arc<Vec<u8>>) -> Result<Vec<u8>> + Clone,
 {
     let Ok(pkt) = dns::Packet::parse(&bytes[dns_start_location..])
         .inspect_err(|e| error!("failed to parse DNS Question: {e}"))
@@ -164,15 +164,16 @@ where
 
     let bytes = Arc::new(bytes);
 
-    let futures = config.get_nameservers().iter().map(|&ns| {
+    let futures = config.get_nameservers().iter().map(|ns| {
         let get_response_from_ns = get_data.clone();
         Box::pin({
             let b = bytes.clone();
             async move {
                 // if TCP, the DNS is not trimmed, so we need to check the length
-                let response_data = get_response_from_ns(ns, &b)
-                    .await
-                    .inspect_err(|e| error!("get data failed: {e}"))?;
+                let response_data = get_response_from_ns(ns, &b).await.inspect_err(|e| {
+                    let ty = if dns_start_location > 0 { "TCP" } else { "UDP" };
+                    error!("get data for {ty}--{ns} failed: {e}");
+                })?;
 
                 let pkt = dns::Packet::parse(&response_data[dns_start_location..])
                     .inspect_err(|e| error!("Failed to parse DNS packet: {e}"))?;
@@ -224,7 +225,7 @@ pub fn udp_server(config: Arc<RuntimeConfig>, cache: Arc<RwLock<dns_cache::Cache
 
     let (tx, mut rx) = mpsc::channel::<ChannelData>(64);
 
-    let get_data = async |ns, bytes: &Arc<Vec<u8>>| -> Result<Vec<u8>> {
+    let get_data = async |ns: &SocketAddr, bytes: &Arc<Vec<u8>>| -> Result<Vec<u8>> {
         let mut rec_buf = vec![0u8; MAX_PKT_SIZE];
 
         let dns_sock = net::UdpSocket::bind("0.0.0.0:0").await?;
@@ -292,12 +293,12 @@ pub async fn tcp_server(
 
     let (tx, mut rx) = mpsc::channel::<(Vec<u8>, net::TcpStream)>(1000);
 
-    let get_data = async move |ns, bytes: &Arc<Vec<u8>>| -> Result<Vec<u8>> {
+    let get_data = async move |ns: &SocketAddr, bytes: &Arc<Vec<u8>>| -> Result<Vec<u8>> {
         let mut sock = net::TcpStream::connect(ns).await?;
 
         sock.write_all(bytes).await?;
 
-        let dur = std::time::Duration::from_millis(5000);
+        let dur = std::time::Duration::from_millis(500);
         // dont trim the buffer, we need the full packet
         let rec_buf = timeout(dur, sock.read_dns()).await??;
         warn!("TCP DNS request received: {} bytes", rec_buf.len());
@@ -447,7 +448,7 @@ pub async fn process_dns_request_test<F>(
     get_data: F,
 ) -> Result<Vec<u8>>
 where
-    F: AsyncFn(SocketAddr, &Arc<Vec<u8>>) -> Result<Vec<u8>> + Clone,
+    F: AsyncFn(&SocketAddr, &Arc<Vec<u8>>) -> Result<Vec<u8>> + Clone,
 {
     process_dns_request(who, config, cache, bytes, dns_start_location, get_data).await
 }

@@ -76,7 +76,7 @@ async fn test_process_dns_request_local_host_resolution() {
     let client_addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
 
     // Mock function should not be called for local resolution
-    let mock_get_data = |_ns, _bytes: &Arc<Vec<u8>>| async move {
+    let mock_get_data = |_ns: &SocketAddr, _bytes: &Arc<Vec<u8>>| async move {
         panic!("get_data should not be called for local resolution")
     };
 
@@ -123,7 +123,7 @@ async fn test_process_dns_request_local_host_with_domain_suffix() {
     let query_bytes = create_dns_query("myhost.local", TYPE::A);
     let client_addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
 
-    let mock_get_data = |_ns, _bytes: &Arc<Vec<u8>>| async move {
+    let mock_get_data = |_ns: &SocketAddr, _bytes: &Arc<Vec<u8>>| async move {
         panic!("get_data should not be called for local resolution with domain suffix")
     };
 
@@ -159,7 +159,7 @@ async fn test_process_dns_request_tcp_local_resolution() {
     tcp_bytes.extend_from_slice(&dns_packet);
 
     let client_addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
-    let mock_get_data = |_ns, _bytes: &Arc<Vec<u8>>| async move {
+    let mock_get_data = |_ns: &SocketAddr, _bytes: &Arc<Vec<u8>>| async move {
         panic!("get_data should not be called for TCP local resolution")
     };
 
@@ -210,7 +210,7 @@ async fn test_process_dns_request_blocked_domain() {
     let query_bytes = create_dns_query("blocked.com", TYPE::A);
     let client_addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
 
-    let mock_get_data = |_ns, _bytes: &Arc<Vec<u8>>| async move {
+    let mock_get_data = |_ns: &SocketAddr, _bytes: &Arc<Vec<u8>>| async move {
         panic!("get_data should not be called for blocked domains")
     };
 
@@ -254,7 +254,7 @@ async fn test_process_dns_request_blocked_subdomain() {
     let query_bytes = create_dns_query("sub.blocked.com", TYPE::A);
     let client_addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
 
-    let mock_get_data = |_ns, _bytes: &Arc<Vec<u8>>| async move {
+    let mock_get_data = |_ns: &SocketAddr, _bytes: &Arc<Vec<u8>>| async move {
         panic!("get_data should not be called for blocked subdomains")
     };
 
@@ -297,7 +297,7 @@ async fn test_process_dns_request_cache_hit() {
     let client_addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
 
     // Mock should not be called since we have cache hit
-    let mock_get_data = |_ns, _bytes: &Arc<Vec<u8>>| async move {
+    let mock_get_data = |_ns: &SocketAddr, _bytes: &Arc<Vec<u8>>| async move {
         panic!("get_data should not be called for cache hits")
     };
 
@@ -331,7 +331,7 @@ async fn test_process_dns_request_upstream_forwarding_success() {
 
     // Mock successful upstream response
     let mock_response = create_dns_response("google.com", "8.8.8.8", TYPE::A);
-    let mock_get_data = move |_ns, _bytes: &Arc<Vec<u8>>| {
+    let mock_get_data = move |_ns: &SocketAddr, _bytes: &Arc<Vec<u8>>| {
         let response = mock_response.clone();
         async move { Ok(response) }
     };
@@ -370,7 +370,7 @@ async fn test_process_dns_request_upstream_forwarding_with_ipv6() {
 
     // Create IPv6 response
     let ipv6_response = create_dns_response("ipv6.google.com", "2001:4860:4860::8888", TYPE::AAAA);
-    let mock_get_data = move |_ns, _bytes: &Arc<Vec<u8>>| {
+    let mock_get_data = move |_ns: &SocketAddr, _bytes: &Arc<Vec<u8>>| {
         let response = ipv6_response.clone();
         async move { Ok(response) }
     };
@@ -403,7 +403,7 @@ async fn test_process_dns_request_upstream_forwarding_failure() {
     let client_addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
 
     // Mock upstream failure
-    let mock_get_data = |_ns, _bytes: &Arc<Vec<u8>>| async move {
+    let mock_get_data = |_ns: &SocketAddr, _bytes: &Arc<Vec<u8>>| async move {
         Err(anyhow::anyhow!("Mock upstream server failure"))
     };
 
@@ -431,7 +431,7 @@ async fn test_process_dns_request_no_nameservers_configured() {
     let query_bytes = create_dns_query("external.com", TYPE::A);
     let client_addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
 
-    let mock_get_data = |_ns, _bytes: &Arc<Vec<u8>>| async move {
+    let mock_get_data = |_ns: &SocketAddr, _bytes: &Arc<Vec<u8>>| async move {
         panic!("get_data should not be called when no nameservers configured")
     };
 
@@ -450,7 +450,7 @@ async fn test_process_dns_request_malformed_packet() {
     let malformed_bytes = vec![1, 2, 3, 4]; // Invalid DNS packet
     let client_addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
 
-    let mock_get_data = |_ns, _bytes: &Arc<Vec<u8>>| async move {
+    let mock_get_data = |_ns: &SocketAddr, _bytes: &Arc<Vec<u8>>| async move {
         panic!("get_data should not be called for malformed packets")
     };
 
@@ -478,7 +478,7 @@ async fn test_process_dns_request_empty_packet() {
     let empty_bytes = vec![];
     let client_addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
 
-    let mock_get_data = |_ns, _bytes: &Arc<Vec<u8>>| async move {
+    let mock_get_data = |_ns: &SocketAddr, _bytes: &Arc<Vec<u8>>| async move {
         panic!("get_data should not be called for empty packets")
     };
 
@@ -499,7 +499,7 @@ async fn test_process_dns_request_tcp_wrong_offset() {
     let query_bytes = create_dns_query("myhost", TYPE::A);
     let client_addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
 
-    let mock_get_data = |_ns, _bytes: &Arc<Vec<u8>>| async move {
+    let mock_get_data = |_ns: &SocketAddr, _bytes: &Arc<Vec<u8>>| async move {
         panic!("get_data should not be called with wrong offset")
     };
 
@@ -527,7 +527,7 @@ async fn test_process_dns_request_response_flags() {
     let query_bytes = create_dns_query("myhost", TYPE::A);
     let client_addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
 
-    let mock_get_data = |_ns, _bytes: &Arc<Vec<u8>>| async move {
+    let mock_get_data = |_ns: &SocketAddr, _bytes: &Arc<Vec<u8>>| async move {
         panic!("get_data should not be called for local resolution")
     };
 
