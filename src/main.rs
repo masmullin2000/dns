@@ -49,7 +49,6 @@ fn parse_log_level(level: &str) -> tracing::Level {
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    // Initialize structured logging
 
     let reg = tracing_subscriber::registry();
     if args.journald {
@@ -74,7 +73,8 @@ fn main() -> Result<()> {
 
     let config = args.config.as_str();
     info!("Starting DNS server with config: {config}");
-    let rt = tokio::runtime::Builder::new_current_thread()
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
         .enable_all()
         .build()?;
     rt.block_on(async { lib::run(config).await })

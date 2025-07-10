@@ -7,7 +7,6 @@ mod server;
 use std::sync::{Arc, RwLock};
 
 use config::{RuntimeConfig, StartupConfig};
-use dns_cache::Cache;
 use server::{tcp_server, udp_server};
 use tracing::{error, info};
 
@@ -17,30 +16,29 @@ pub async fn run(cfg_str: &str) -> anyhow::Result<()> {
     let config = Arc::new(config);
     info!("Loaded DNS configuration from {cfg_str}");
 
-    let cache: Cache = Cache::default();
-    let cache = Arc::new(RwLock::new(cache));
+    let cache = Arc::new(RwLock::new(dns_cache::Cache::default()));
 
-    let cache_clone = cache.clone();
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
-        loop {
-            interval.tick().await;
-            if let Ok(mut cache) = cache_clone.write() {
-                cache.prune();
-            }
+    tokio::spawn({
+        let config = config.clone();
+        let cache = cache.clone();
+        async move { _ = udp_server(config, cache).inspect_err(|e| error!("UDP server failed: {e}")) }
+    });
+    tokio::spawn({
+        let cache = cache.clone();
+        async move {
+            tcp_server(config, cache)
+                .await
+                .inspect_err(|e| error!("TCP server failed: {e}"))
         }
     });
 
-    let cfg = config.clone();
-    let csh = cache.clone();
-    tokio::spawn(async move {
-        if let Err(e) = udp_server(cfg, csh) {
-            error!("UDP server failed: {e}");
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+    loop {
+        interval.tick().await;
+        if let Ok(mut cache) = cache.write() {
+            cache.prune();
         }
-    });
-    tcp_server(config, cache)
-        .await
-        .inspect_err(|e| error!("TCP server failed: {e}"))
+    }
 }
 
 #[cfg(test)]

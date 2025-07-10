@@ -149,6 +149,7 @@ impl From<StartupConfig> for RuntimeConfig {
 pub struct BlocklistBuilder(HashSet<String>);
 
 impl BlocklistBuilder {
+    // set all the items in a blocklist file
     pub fn set_file(&mut self, block_file: &str) -> Result<()> {
         let file = std::fs::read_to_string(block_file)?;
         for line in file.lines() {
@@ -157,6 +158,7 @@ impl BlocklistBuilder {
         Ok(())
     }
 
+    // set an individual item in the blocklist
     pub fn set_item(&mut self, item: &str) {
         let item = item.trim();
         if item.is_empty() {

@@ -8,11 +8,9 @@ pub struct IpAddr {
 
 impl IpAddr {
     pub fn new(ip: std::net::IpAddr, ttl: u32) -> Self {
-        #[allow(clippy::cast_lossless)] // SAFETY: ttl is u32
-        Self {
-            ip,
-            ttl: std::time::SystemTime::now() + std::time::Duration::from_secs(ttl as u64),
-        }
+        #[allow(clippy::cast_lossless)] // SAFETY: ttl is u32 so casting to u64 is safe
+        let ttl = std::time::SystemTime::now() + std::time::Duration::from_secs(ttl as u64);
+        Self { ip, ttl }
     }
 }
 

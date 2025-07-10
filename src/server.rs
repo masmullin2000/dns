@@ -1,5 +1,5 @@
 use std::{
-    net::SocketAddr,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::{Arc, RwLock},
 };
 
@@ -8,8 +8,8 @@ use futures::future::select_all;
 use simple_dns as dns;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net,
-    sync::mpsc,
+    sync::mpsc::Sender as AsyncSender,
+    sync::mpsc::channel as AsyncChannel,
     time::timeout,
 };
 use tracing::{debug, error, info, trace, warn};
@@ -21,37 +21,33 @@ const LOCAL_ADDR: &str = "127.0.0.53:53";
 const MAX_PKT_SIZE: usize = 65535;
 const TCP_DNS_LEN_BYTES_SZ: usize = 2; // The first two bytes of a TCP DNS packet are the length of the packet
 
-type Sender = mpsc::Sender<ChannelData>;
+type Sender = AsyncSender<ChannelData>;
 
 pub struct ChannelData {
     pub bytes: Vec<u8>,
-    pub addr: std::net::SocketAddr,
-    pub sock: Arc<net::UdpSocket>,
+    pub addr: SocketAddr,
+    pub sock: Arc<tokio::net::UdpSocket>,
 }
 
 impl ChannelData {
-    pub const fn new(
-        bytes: Vec<u8>,
-        addr: std::net::SocketAddr,
-        sock: Arc<net::UdpSocket>,
-    ) -> Self {
+    pub const fn new(bytes: Vec<u8>, addr: SocketAddr, sock: Arc<tokio::net::UdpSocket>) -> Self {
         Self { bytes, addr, sock }
     }
 }
 
-pub fn udp_sock(addr: impl AsRef<str>) -> Result<net::UdpSocket> {
+pub fn udp_sock(addr: impl AsRef<str>) -> Result<tokio::net::UdpSocket> {
     let sock = socket2::Socket::new(
         socket2::Domain::IPV4,
         socket2::Type::DGRAM,
         Some(socket2::Protocol::UDP),
     )?;
-    let addr: std::net::SocketAddr = addr.as_ref().parse()?;
+    let addr: SocketAddr = addr.as_ref().parse()?;
     sock.set_reuse_port(true)?;
     sock.bind(&addr.into())?;
     sock.set_nonblocking(true)?;
 
     let sock: std::net::UdpSocket = sock.into();
-    let sock = net::UdpSocket::from_std(sock)?;
+    let sock = tokio::net::UdpSocket::from_std(sock)?;
     info!("Socket listening on {}", sock.local_addr()?);
 
     Ok(sock)
@@ -81,7 +77,7 @@ impl DnsAnswers for dns::Question<'_> {
         )]
         let addr = if config.has_block(&name) {
             info!("Blocked domain: {name}");
-            vec![std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)]
+            vec![IpAddr::V4(Ipv4Addr::LOCALHOST)]
         } else if let Some(addr) = config.has_addr(&name) {
             vec![addr]
         } else if let Some(addr) = cache.read().expect("cache read lock poisoned").get(&name) {
@@ -98,12 +94,8 @@ impl DnsAnswers for dns::Question<'_> {
             addr.into_iter()
                 .map(|addr| {
                     let rdata = match addr {
-                        std::net::IpAddr::V4(addr) => {
-                            dns::rdata::RData::A(dns::rdata::A::from(addr))
-                        }
-                        std::net::IpAddr::V6(addr) => {
-                            dns::rdata::RData::AAAA(dns::rdata::AAAA::from(addr))
-                        }
+                        IpAddr::V4(addr) => dns::rdata::RData::A(dns::rdata::A::from(addr)),
+                        IpAddr::V6(addr) => dns::rdata::RData::AAAA(dns::rdata::AAAA::from(addr)),
                     };
                     dns::ResourceRecord::new(self.qname.clone(), class, TTL, rdata)
                 })
@@ -121,14 +113,20 @@ async fn process_dns_request<F>(
     get_data: F,
 ) -> Result<Vec<u8>>
 where
-    F: AsyncFn(&SocketAddr, &Arc<Vec<u8>>) -> Result<Vec<u8>> + Clone,
+    F: Clone + AsyncFn(&SocketAddr, &Arc<Vec<u8>>) -> Result<Vec<u8>>,
 {
-    let Ok(pkt) = dns::Packet::parse(&bytes[dns_start_location..])
+    let Ok(mut pkt) = dns::Packet::parse(&bytes[dns_start_location..])
         .inspect_err(|e| error!("failed to parse DNS Question: {e}"))
     else {
         error!("Failed to parse DNS packet: {:?}", &bytes);
         anyhow::bail!("Failed to parse DNS packet");
     };
+
+    pkt.set_flags(
+        dns::PacketFlag::RESPONSE
+            | dns::PacketFlag::RECURSION_DESIRED
+            | dns::PacketFlag::RECURSION_AVAILABLE,
+    );
 
     let answers: Vec<_> = pkt
         .questions
@@ -138,14 +136,8 @@ where
         .collect();
 
     if !answers.is_empty() {
-        let mut reply = pkt.clone().into_reply();
-        reply.set_flags(
-            dns::PacketFlag::RESPONSE
-                | dns::PacketFlag::RECURSION_DESIRED
-                | dns::PacketFlag::RECURSION_AVAILABLE,
-        );
-        reply.answers = answers;
-        let Ok(reply_data) = reply.build_bytes_vec() else {
+        pkt.answers = answers;
+        let Ok(reply_data) = pkt.build_bytes_vec() else {
             anyhow::bail!("Failed to build custom DNS reply packet");
         };
         let reply = if dns_start_location > 0 {
@@ -166,8 +158,8 @@ where
 
     let futures = config.get_nameservers().iter().map(|ns| {
         let get_response_from_ns = get_data.clone();
+        let b = bytes.clone();
         Box::pin({
-            let b = bytes.clone();
             async move {
                 // if TCP, the DNS is not trimmed, so we need to check the length
                 let response_data = get_response_from_ns(ns, &b).await.inspect_err(|e| {
@@ -175,60 +167,54 @@ where
                     error!("get data for {ty}--{ns} failed: {e}");
                 })?;
 
-                let pkt = dns::Packet::parse(&response_data[dns_start_location..])
-                    .inspect_err(|e| error!("Failed to parse DNS packet: {e}"))?;
-
-                if let Some(question) = pkt.questions.first() {
-                    let qname = &question.qname;
-                    for rr in pkt.answers {
-                        let ttl = rr.ttl;
-                        if ttl == 0 {
-                            continue;
-                        }
-                        match rr.rdata {
-                            dns::rdata::RData::A(a) => {
-                                let addr =
-                                    std::net::IpAddr::V4(std::net::Ipv4Addr::from(a.address));
-                                cache
-                                    .write()
-                                    .expect("cache write lock poisoned")
-                                    .insert(qname.to_string(), dns_cache::IpAddr::new(addr, ttl));
-                                trace!("for {who} - {qname}:{ttl} A: {addr}");
-                            }
-                            dns::rdata::RData::AAAA(a) => {
-                                let addr =
-                                    std::net::IpAddr::V6(std::net::Ipv6Addr::from(a.address));
-                                cache
-                                    .write()
-                                    .expect("cache write lock poisoned")
-                                    .insert(qname.to_string(), dns_cache::IpAddr::new(addr, ttl));
-                                trace!("for {who} - {qname}:{ttl} AAAA: {addr}");
-                            }
-                            _ => (),
-                        }
-                    }
-                }
-                Ok::<Vec<u8>, anyhow::Error>(response_data)
+                Ok::<_, anyhow::Error>(response_data)
             }
         })
     });
 
-    match select_all(futures).await {
-        (Ok(data), _, _) => Ok(data),
-        _ => anyhow::bail!("Failed to get a response from any nameserver"),
+    let (Ok(response_data), _, _) = select_all(futures).await else {
+        anyhow::bail!("Failed to get a response from any nameserver");
+    };
+    let pkt = dns::Packet::parse(&response_data[dns_start_location..])
+        .inspect_err(|e| error!("Failed to parse DNS packet: {e}"))?;
+
+    if let Some(question) = pkt.questions.first() {
+        let qname = &question.qname;
+        let mut cache = cache.write().expect("cache write lock poisoned");
+        for rr in pkt.answers {
+            let ttl = rr.ttl;
+            if ttl == 0 {
+                continue;
+            }
+            match rr.rdata {
+                dns::rdata::RData::A(a) => {
+                    let addr = IpAddr::V4(Ipv4Addr::from(a.address));
+                    cache.insert(qname.to_string(), dns_cache::IpAddr::new(addr, ttl));
+                    trace!("for {who} - {qname}:{ttl} A: {addr}");
+                }
+                dns::rdata::RData::AAAA(a) => {
+                    let addr = IpAddr::V6(Ipv6Addr::from(a.address));
+                    cache.insert(qname.to_string(), dns_cache::IpAddr::new(addr, ttl));
+                    trace!("for {who} - {qname}:{ttl} AAAA: {addr}");
+                }
+                _ => (),
+            }
+        }
+        drop(cache);
     }
+    Ok(response_data)
 }
 
 pub fn udp_server(config: Arc<RuntimeConfig>, cache: Arc<RwLock<dns_cache::Cache>>) -> Result<()> {
     let remote_sock = Arc::new(udp_sock(ADDR)?);
     let local_sock = Arc::new(udp_sock(LOCAL_ADDR)?);
 
-    let (tx, mut rx) = mpsc::channel::<ChannelData>(64);
+    let (tx, mut rx) = AsyncChannel::<ChannelData>(64);
 
     let get_data = async |ns: &SocketAddr, bytes: &Arc<Vec<u8>>| -> Result<Vec<u8>> {
         let mut rec_buf = vec![0u8; MAX_PKT_SIZE];
 
-        let dns_sock = net::UdpSocket::bind("0.0.0.0:0").await?;
+        let dns_sock = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
         dns_sock.connect(ns).await?;
         dns_sock.send(bytes).await?;
 
@@ -258,7 +244,7 @@ pub fn udp_server(config: Arc<RuntimeConfig>, cache: Arc<RwLock<dns_cache::Cache
         }
     });
 
-    let recv_loop = |sock: Arc<net::UdpSocket>, tx: Sender| async move {
+    let recv_loop = |sock: Arc<tokio::net::UdpSocket>, tx: Sender| async move {
         let mut buf = vec![0u8; MAX_PKT_SIZE];
         loop {
             let Ok((sz, addr)) = sock.recv_from(&mut buf).await.inspect_err(|e| {
@@ -283,7 +269,7 @@ pub async fn tcp_server(
     config: Arc<RuntimeConfig>,
     cache: Arc<RwLock<dns_cache::Cache>>,
 ) -> anyhow::Result<()> {
-    let sock = net::TcpListener::bind("0.0.0.0:53")
+    let sock = tokio::net::TcpListener::bind("0.0.0.0:53")
         .await
         .inspect_err(|e| error!("Failed to bind TCP socket: {e}"))?;
     let sock = Arc::new(sock);
@@ -291,15 +277,15 @@ pub async fn tcp_server(
 
     info!("TCP Socket listening on {}", sock.local_addr()?);
 
-    let (tx, mut rx) = mpsc::channel::<(Vec<u8>, net::TcpStream)>(1000);
+    let (tx, mut rx) = AsyncChannel::<(Vec<u8>, tokio::net::TcpStream)>(1000);
 
     let get_data = async move |ns: &SocketAddr, bytes: &Arc<Vec<u8>>| -> Result<Vec<u8>> {
-        let mut sock = net::TcpStream::connect(ns).await?;
+        let mut sock = tokio::net::TcpStream::connect(ns).await?;
 
         sock.write_all(bytes).await?;
 
         let dur = std::time::Duration::from_millis(500);
-        // dont trim the buffer, we need the full packet
+        // dont remove the buffer length prefix
         let rec_buf = timeout(dur, sock.read_dns()).await??;
         warn!("TCP DNS request received: {} bytes", rec_buf.len());
 
@@ -388,25 +374,25 @@ pub trait Eof {
     async fn read_eof(&mut self) -> anyhow::Result<Vec<u8>>;
 }
 
-impl Eof for net::TcpStream {
+impl Eof for tokio::net::TcpStream {
     async fn read_until<EOF, BF>(&mut self, eof: EOF, break_on: BF) -> anyhow::Result<Vec<u8>>
     where
         EOF: Fn() -> Result<()>,
         BF: Fn(&[u8]) -> Option<Vec<u8>>,
     {
+        const EOF_DUR: std::time::Duration = std::time::Duration::from_millis(50);
         let mut data = vec![0u8; MAX_PKT_SIZE];
 
-        let mut buf = Vec::new();
+        let mut buf = Vec::default();
         loop {
-            let dur = std::time::Duration::from_millis(50);
-            match timeout(dur, self.read(&mut data)).await {
+            let sz = match timeout(EOF_DUR, self.read(&mut data)).await {
                 Ok(Ok(0)) => {
                     eof()?;
                     break;
                 }
                 Ok(Ok(sz)) => {
                     trace!("Read {sz} bytes from TCP stream");
-                    data.truncate(sz);
+                    sz
                 }
                 Ok(Err(e)) => {
                     error!("Failed to read from TCP stream: {e}");
@@ -417,9 +403,9 @@ impl Eof for net::TcpStream {
                     eof()?;
                     break;
                 }
-            }
+            };
 
-            buf.extend_from_slice(&data);
+            buf.extend_from_slice(&data[..sz]);
             let Some(early_result) = break_on(&buf) else {
                 continue;
             };
