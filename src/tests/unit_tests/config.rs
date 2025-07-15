@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
-use crate::config::{BlocklistBuilder, RuntimeConfig, StartupConfig};
+use crate::block_filter::BlocklistBuilder;
+use crate::config::{RuntimeConfig, StartupConfig};
 
 #[test]
 fn test_startup_config_parsing() {
@@ -45,18 +46,8 @@ files = ["./test_blocklist.list"]
     };
     assert!(domains.contains(&"local".to_string()));
     assert!(domains.contains(&"home".to_string()));
-    assert!(
-        startup_config
-            .nameservers
-            .ip4
-            .contains(&"1.1.1.1".to_string())
-    );
-    assert!(
-        startup_config
-            .nameservers
-            .ip4
-            .contains(&"8.8.8.8".to_string())
-    );
+    assert!(startup_config.nameservers.ip4.contains("1.1.1.1"));
+    assert!(startup_config.nameservers.ip4.contains("8.8.8.8"));
 }
 
 #[test]
@@ -109,7 +100,7 @@ files = ["./test_blocklist_runtime.list"]
     };
     assert!(domains.contains(&"local".to_string()));
     assert!(domains.contains(&"home".to_string()));
-    assert!(runtime_config.block_filter.is_some());
+    assert!(runtime_config.block_filter.contains("blocked.com"));
     assert!(
         runtime_config
             .get_nameservers()
@@ -377,8 +368,7 @@ fn test_blocklist_builder_set_file_duplicate_domains() {
 fn test_blocklist_builder_build_empty_set() {
     let builder = BlocklistBuilder::default();
     let bloom_filter = builder.build();
-
-    assert!(bloom_filter.is_none());
+    assert!(bloom_filter.is_empty());
 }
 
 #[test]
@@ -388,13 +378,11 @@ fn test_blocklist_builder_build_with_domains() {
     builder.set_item("*.blocked.org");
     builder.set_item("anothersite.net");
 
-    let bloom_filter = builder.build();
+    let filter = builder.build();
 
-    assert!(bloom_filter.is_some());
-    let filter = bloom_filter.unwrap();
-    assert!(filter.check("example.com"));
-    assert!(filter.check("blocked.org"));
-    assert!(filter.check("anothersite.net"));
+    assert!(filter.contains("example.com"));
+    assert!(filter.contains("blocked.org"));
+    assert!(filter.contains("anothersite.net"));
 }
 
 #[test]
@@ -402,27 +390,23 @@ fn test_blocklist_builder_build_single_domain() {
     let mut builder = BlocklistBuilder::default();
     builder.set_item("single.com");
 
-    let bloom_filter = builder.build();
+    let filter = builder.build();
 
-    assert!(bloom_filter.is_some());
-    let filter = bloom_filter.unwrap();
-    assert!(filter.check("single.com"));
+    assert!(filter.contains("single.com"));
 }
 
 #[test]
 fn test_blocklist_builder_build_large_set() {
     let mut builder = BlocklistBuilder::default();
     for i in 0..1000 {
-        builder.set_item(&format!("domain{}.com", i));
+        builder.set_item(&format!("domain{i}.com"));
     }
 
-    let bloom_filter = builder.build();
+    let filter = builder.build();
 
-    assert!(bloom_filter.is_some());
-    let filter = bloom_filter.unwrap();
-    assert!(filter.check("domain0.com"));
-    assert!(filter.check("domain500.com"));
-    assert!(filter.check("domain999.com"));
+    assert!(filter.contains("domain0.com"));
+    assert!(filter.contains("domain500.com"));
+    assert!(filter.contains("domain999.com"));
 }
 
 #[test]
@@ -549,17 +533,17 @@ fn test_blocklist_builder_edge_case_very_long_domain() {
 }
 
 #[test]
-fn test_blocklist_builder_build_and_check_false_negatives() {
+fn test_blocklist_builder_build_and_check_false_postives() {
     let mut builder = BlocklistBuilder::default();
     builder.set_item("blocked.com");
     builder.set_item("*.blocked.org");
 
-    let bloom_filter = builder.build().unwrap();
+    let bloom_filter = builder.build();
 
-    assert!(bloom_filter.check("blocked.com"));
-    assert!(bloom_filter.check("blocked.org"));
-    assert!(!bloom_filter.check("notblocked.com"));
-    assert!(!bloom_filter.check("different.net"));
+    assert!(bloom_filter.contains("blocked.com"));
+    assert!(bloom_filter.contains("blocked.org"));
+    assert!(!bloom_filter.contains("notblocked.com"));
+    assert!(!bloom_filter.contains("different.net"));
 }
 
 #[test]
@@ -569,12 +553,12 @@ fn test_blocklist_builder_integration_file_to_bloom() {
 
     let files = vec!["./test_blocklist_integration.list".to_string()];
     let builder = BlocklistBuilder::from(files);
-    let bloom_filter = builder.build().unwrap();
+    let bloom_filter = builder.build();
 
-    assert!(bloom_filter.check("example.com"));
-    assert!(bloom_filter.check("blocked.org"));
-    assert!(bloom_filter.check("anothersite.net"));
-    assert!(!bloom_filter.check("notblocked.com"));
+    assert!(bloom_filter.contains("example.com"));
+    assert!(bloom_filter.contains("blocked.org"));
+    assert!(bloom_filter.contains("anothersite.net"));
+    assert!(!bloom_filter.contains("notblocked.com"));
 
     std::fs::remove_file("./test_blocklist_integration.list").unwrap();
 }

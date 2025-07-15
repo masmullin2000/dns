@@ -1,7 +1,9 @@
 use anyhow::Result;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
-use tracing::{debug, error, warn};
+use tracing::{debug, error};
+
+use crate::block_filter::{BlockFilter, BlocklistBuilder};
 
 #[derive(Deserialize, Default, Debug)]
 pub struct StartupConfig {
@@ -18,7 +20,7 @@ pub struct StartupConfig {
 pub struct RuntimeConfig {
     pub local_network: LocalNetwork,
     pub local_domains: Domains,
-    pub block_filter: Option<bloomfilter::Bloom<str>>,
+    pub block_filter: BlockFilter,
     pub nameservers: Vec<std::net::SocketAddr>,
 }
 
@@ -83,15 +85,19 @@ impl RuntimeConfig {
 
     #[must_use]
     pub fn has_block(&self, value: &str) -> bool {
-        let Some(ref blocklist) = self.block_filter else {
-            return false;
-        };
-
+        // self.block_filter.contains(value)
+        // let Some(ref blocklist) = self.block_filter else {
+        //     return false;
+        // };
+        // if self.block_coll.is_empty() {
+        //     return false;
+        // }
+        //
         // a reverse check would be faster for the case where
         // we should return true, however that's the minority case.
         let mut name = value;
         while !name.is_empty() {
-            if blocklist.check(name) {
+            if self.block_filter.contains(name) {
                 return true;
             }
             if let Some((_, value)) = name.split_once('.') {
@@ -142,90 +148,5 @@ impl From<StartupConfig> for RuntimeConfig {
             block_filter,
             nameservers,
         }
-    }
-}
-
-#[derive(Default, Debug)]
-pub struct BlocklistBuilder(HashSet<String>);
-
-impl BlocklistBuilder {
-    // set all the items in a blocklist file
-    pub fn set_file(&mut self, block_file: &str) -> Result<()> {
-        let file = std::fs::read_to_string(block_file)?;
-        for line in file.lines() {
-            self.set_item(line);
-        }
-        Ok(())
-    }
-
-    // set an individual item in the blocklist
-    pub fn set_item(&mut self, item: &str) {
-        let item = item.trim();
-        if item.is_empty() {
-        } else if let Some(name) = item.strip_prefix("*.") {
-            self.0.insert(name.into());
-        } else {
-            self.0.insert(item.into());
-        }
-    }
-
-    pub fn build(self) -> Option<bloomfilter::Bloom<str>> {
-        if self.0.is_empty() {
-            warn!("Blocklist Size 0");
-            None
-        } else {
-            bloomfilter::Bloom::new_for_fp_rate(self.0.len(), 0.00001).map_or_else(
-                |e| {
-                    error!(
-                        "Failed to create bloom filter for blocklist - {e}: blocklist inoperable"
-                    );
-                    None
-                },
-                |mut filter| {
-                    for item in &self.0 {
-                        filter.set(item.as_str());
-                    }
-                    debug!("Blocklist Size {}", self.0.len());
-                    Some(filter)
-                },
-            )
-        }
-    }
-
-    #[must_use]
-    pub fn contains(&self, domain: &str) -> bool {
-        self.0.contains(domain)
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-impl From<Vec<String>> for BlocklistBuilder {
-    fn from(block_files: Vec<String>) -> Self {
-        let mut builder = Self::default();
-        for block_file in &block_files {
-            if let Err(e) = builder.set_file(block_file) {
-                error!("Failed to load blocklist file {block_file}: {e}");
-            }
-        }
-        builder
-    }
-}
-
-impl From<Option<Vec<String>>> for BlocklistBuilder {
-    fn from(block_files: Option<Vec<String>>) -> Self {
-        let Some(blocklists) = block_files else {
-            warn!("No blocklists defined in config");
-            return Self::default();
-        };
-        Self::from(blocklists)
     }
 }

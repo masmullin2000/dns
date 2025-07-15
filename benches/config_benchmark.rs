@@ -79,7 +79,7 @@ fn setup_config_with_blocklist(num_block_items: usize) -> config::RuntimeConfig 
     blocklist_content.push_str("anotherblockeddomain.com\n");
 
     // Write to a temporary file
-    let temp_file = format!("./temp_blocklist_{}.txt", num_block_items);
+    let temp_file = format!("./temp_blocklist_{num_block_items}.txt");
     std::fs::write(&temp_file, blocklist_content).expect("Failed to write temp blocklist file");
 
     startup_config.blocklists.files = Some(vec![temp_file.clone()]);
@@ -93,7 +93,7 @@ fn setup_config_with_blocklist(num_block_items: usize) -> config::RuntimeConfig 
 }
 
 fn benchmark_has_block(c: &mut Criterion) {
-    let config = setup_config_with_blocklist(1000);
+    let config = setup_config_with_blocklist(800_000);
     let mut group = c.benchmark_group("has_block");
 
     group.bench_function("blocked domain", |b| {

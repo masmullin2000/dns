@@ -167,8 +167,7 @@ async fn test_tcp_read_eof_partial_packet() {
 
     let server_task = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
-        let packet_data = stream.read_eof().await.unwrap();
-        packet_data
+        stream.read_eof().await.unwrap()
     });
 
     // Client sends data in small chunks
@@ -265,8 +264,7 @@ async fn test_tcp_read_eof_large_packet() {
 
     let server_task = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
-        let packet_data = stream.read_eof().await.unwrap();
-        packet_data
+        stream.read_eof().await.unwrap()
     });
 
     // Create large packet (but not too large to avoid memory issues)
@@ -301,8 +299,7 @@ async fn test_tcp_read_eof_empty_connection() {
 
     let server_task = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
-        let packet_data = stream.read_eof().await.unwrap();
-        packet_data
+        stream.read_eof().await.unwrap()
     });
 
     // Client connects and immediately closes

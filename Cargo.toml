@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-bloomfilter = "3"
+bloomfilter = { version = "3", optional = true }
 crossbeam-channel = "0.5"
 futures = "0.3"
 simple-dns = "0.10"
@@ -41,6 +41,33 @@ name = "dns"
 path = "src/main.rs"
 
 [features]
-default = []
+default = ["fatset"]
 jemalloc = ["dep:tikv-jemallocator"]
 mimalloc = ["dep:mimalloc"]
+bloom = ["dep:bloomfilter"]
+set = []
+fatset = ["set"]
+slimset = ["set"]
+
+## Feature Notes:
+## - `jemalloc`: Uses Tikv's jemallocator for memory allocation. low memory overhead
+## - `mimalloc`: Uses mimalloc for memory allocation. high memory overhead (very large for feature = "bloom")
+## - `bloom`: Enables bloom filter support.
+# tiny memory overhead (except with mimalloc).
+# false positives
+# slightly slower than fatset and slimset for most cases.
+# fastest for the "normal" non-blocked domains (which is the majority of domains).
+## - `fatset`: Enables lookups using a HashSet<hash(name)>.
+# moderate memory overhead.
+# No false positives,
+# faster than bloom for most cases except for "normal" non-blocked domains (which is the majority of domains).
+## - `slimset`: Enables lookups using a BTreeSet<hash(name)>.
+# moderate memory overhead, less memory overhead than fatset,
+# no false positives.
+# slower than fatset and slow than some bloom filter tests.
+#
+# Suggestion, use `fatset` with the default musl allocator for most use cases,
+# `bloom` for low memory overhead and false positives are acceptable.
+# Jemalloc will give very very slight performance improvements, for 33% more memory overhead.
+# Mimalloc will give very very slight performance improvements(but more than jemalloc), for 500% more memory overhead.
+# Do not use `bloom` with `mimalloc`, it will cause very high memory overhead.
