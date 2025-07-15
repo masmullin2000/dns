@@ -76,12 +76,12 @@ impl DnsAnswers for dns::Question<'_> {
             clippy::significant_drop_in_scrutinee
         )]
         let addr = if config.has_block(&name) {
-            info!("Blocked domain: {name}");
+            debug!("Blocked domain: {name}");
             vec![IpAddr::V4(Ipv4Addr::LOCALHOST)]
         } else if let Some(addr) = config.has_addr(&name) {
             vec![addr]
         } else if let Some(addr) = cache.read().expect("cache read lock poisoned").get(&name) {
-            trace!("Cache hit for {name}: {addr:?}");
+            debug!("Cache hit for {name}: {addr:?}");
             addr
         } else {
             return None;
@@ -164,19 +164,20 @@ where
                 // if TCP, the DNS is not trimmed, so we need to check the length
                 let response_data = get_response_from_ns(ns, &b).await.inspect_err(|e| {
                     let ty = if dns_start_location > 0 { "TCP" } else { "UDP" };
-                    error!("get data for {ty}--{ns} failed: {e}");
+                    debug!("get data for {ty}--{ns} failed: {e}");
                 })?;
 
-                Ok::<_, anyhow::Error>(response_data)
+                Ok::<_, anyhow::Error>((ns, response_data))
             }
         })
     });
 
-    let (Ok(response_data), _, _) = select_all(futures).await else {
+    let (Ok((ns, response_data)), _, _) = select_all(futures).await else {
         anyhow::bail!("Failed to get a response from any nameserver");
     };
     let pkt = dns::Packet::parse(&response_data[dns_start_location..])
-        .inspect_err(|e| error!("Failed to parse DNS packet: {e}"))?;
+        .inspect_err(|e| error!("Failed to parse DNS packet: {e}"))
+        .inspect(|_| debug!("Received DNS response from {ns}"))?;
 
     if let Some(question) = pkt.questions.first() {
         let qname = &question.qname;
