@@ -51,14 +51,14 @@ impl BlockFilter {
     #[allow(unreachable_code)]
     pub fn contains(&self, domain: &str) -> bool {
         #[cfg(feature = "bloom")]
-        if self.bloom_contains(domain) {
-            return true;
+        if !self.bloom_contains(domain) {
+            return false;
         }
 
         #[cfg(feature = "set")]
         return self.set_contains(domain);
 
-        false
+        true
     }
 
     #[allow(unreachable_code)]
@@ -108,7 +108,7 @@ impl BlocklistBuilder {
                     .0
                     .iter()
                     .map(|s| {
-                        // Hash the string to a u64 for use in the BTreeSet
+                        // Hash the string to a u64 for use in the Set
                         let mut hasher = std::collections::hash_map::DefaultHasher::new();
                         s.hash(&mut hasher);
                         hasher.finish()
@@ -131,8 +131,7 @@ impl BlocklistBuilder {
                         filter.set(item.as_str());
                     }
                     Some(filter)
-                },
-            );
+                });
                 block_filter.set_bloom(bloom);
             }
             block_filter

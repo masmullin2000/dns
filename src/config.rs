@@ -85,14 +85,6 @@ impl RuntimeConfig {
 
     #[must_use]
     pub fn has_block(&self, value: &str) -> bool {
-        // self.block_filter.contains(value)
-        // let Some(ref blocklist) = self.block_filter else {
-        //     return false;
-        // };
-        // if self.block_coll.is_empty() {
-        //     return false;
-        // }
-        //
         // a reverse check would be faster for the case where
         // we should return true, however that's the minority case.
         let mut name = value;
@@ -121,7 +113,7 @@ impl From<StartupConfig> for RuntimeConfig {
         // Load blocklists
         let blocklist_builder = BlocklistBuilder::from(startup.blocklists.files);
 
-        // Build bloom filter
+        // Build filter
         let block_filter = blocklist_builder.build();
 
         // Cache nameservers
