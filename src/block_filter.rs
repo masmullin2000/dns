@@ -1,46 +1,19 @@
-#[cfg(not(any(feature = "bloom", feature = "fatset", feature = "slimset")))]
-compile_error!(
-    "Filtering features must be enabled. Please enable at least one of: bloom, fatset, slimset."
-);
-
-#[cfg(all(feature = "slimset", feature = "fatset"))]
-compile_error!(
-    "slimset and fatset features are mutually exclusive. Please enable only one of them."
-);
-
-#[cfg(feature = "set")]
 use std::hash::{Hash, Hasher};
 
-#[cfg(feature = "slimset")]
-use std::collections::BTreeSet as Set;
-#[cfg(feature = "fatset")]
-use std::collections::HashSet as Set;
+use std::collections::HashSet;
 
 use anyhow::Result;
 use tracing::{error, warn};
 
 #[derive(Debug, Default)]
 pub struct BlockFilter {
-    #[cfg(feature = "bloom")]
-    bloom: Option<bloomfilter::Bloom<str>>,
-    #[cfg(feature = "set")]
-    set: Set<u64>,
+    set: HashSet<u64>,
 }
 
 impl BlockFilter {
-    #[cfg(feature = "bloom")]
-    fn set_bloom(&mut self, bloom: Option<bloomfilter::Bloom<str>>) {
-        self.bloom = bloom;
-    }
-    #[cfg(feature = "set")]
-    fn set_set(&mut self, set: Set<u64>) {
+    fn set_set(&mut self, set: HashSet<u64>) {
         self.set = set;
     }
-    #[cfg(feature = "bloom")]
-    pub fn bloom_contains(&self, domain: &str) -> bool {
-        self.bloom.as_ref().is_some_and(|bloom| bloom.check(domain))
-    }
-    #[cfg(feature = "set")]
     pub fn set_contains(&self, name: &str) -> bool {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         name.hash(&mut hasher);
@@ -48,26 +21,12 @@ impl BlockFilter {
         self.set.contains(&val)
     }
 
-    #[allow(unreachable_code)]
     pub fn contains(&self, domain: &str) -> bool {
-        #[cfg(feature = "bloom")]
-        if !self.bloom_contains(domain) {
-            return false;
-        }
-
-        #[cfg(feature = "set")]
-        return self.set_contains(domain);
-
-        true
+        self.set_contains(domain)
     }
 
-    #[allow(unreachable_code)]
     pub fn is_empty(&self) -> bool {
-        #[cfg(feature = "bloom")]
-        return self.bloom.is_none();
-
-        #[cfg(feature = "set")]
-        return self.set.is_empty();
+        self.set.is_empty()
     }
 }
 
@@ -102,38 +61,17 @@ impl BlocklistBuilder {
         } else {
             let mut block_filter = BlockFilter::default();
 
-            #[cfg(feature = "set")]
-            {
-                let block_coll = self
-                    .0
-                    .iter()
-                    .map(|s| {
-                        // Hash the string to a u64 for use in the Set
-                        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                        s.hash(&mut hasher);
-                        hasher.finish()
-                    })
-                    .collect();
-                block_filter.set_set(block_coll);
-            }
-
-            #[cfg(feature = "bloom")]
-            {
-                let bloom = bloomfilter::Bloom::new_for_fp_rate(self.0.len(), 0.00001).map_or_else(
-                |e| {
-                    error!(
-                        "Failed to create bloom filter for blocklist - {e}: blocklist inoperable"
-                    );
-                    None
-                },
-                |mut filter| {
-                    for item in &self.0 {
-                        filter.set(item.as_str());
-                    }
-                    Some(filter)
-                });
-                block_filter.set_bloom(bloom);
-            }
+            let block_coll = self
+                .0
+                .iter()
+                .map(|s| {
+                    // Hash the string to a u64 for use in the Set
+                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    s.hash(&mut hasher);
+                    hasher.finish()
+                })
+                .collect();
+            block_filter.set_set(block_coll);
             block_filter
         }
     }

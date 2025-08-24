@@ -367,8 +367,8 @@ fn test_blocklist_builder_set_file_duplicate_domains() {
 #[test]
 fn test_blocklist_builder_build_empty_set() {
     let builder = BlocklistBuilder::default();
-    let bloom_filter = builder.build();
-    assert!(bloom_filter.is_empty());
+    let filter = builder.build();
+    assert!(filter.is_empty());
 }
 
 #[test]
@@ -538,27 +538,27 @@ fn test_blocklist_builder_build_and_check_false_postives() {
     builder.set_item("blocked.com");
     builder.set_item("*.blocked.org");
 
-    let bloom_filter = builder.build();
+    let filter = builder.build();
 
-    assert!(bloom_filter.contains("blocked.com"));
-    assert!(bloom_filter.contains("blocked.org"));
-    assert!(!bloom_filter.contains("notblocked.com"));
-    assert!(!bloom_filter.contains("different.net"));
+    assert!(filter.contains("blocked.com"));
+    assert!(filter.contains("blocked.org"));
+    assert!(!filter.contains("notblocked.com"));
+    assert!(!filter.contains("different.net"));
 }
 
 #[test]
-fn test_blocklist_builder_integration_file_to_bloom() {
+fn test_blocklist_builder_integration_file_to_filter() {
     let test_content = "example.com\n*.blocked.org\n\nanothersite.net\n";
     std::fs::write("./test_blocklist_integration.list", test_content).unwrap();
 
     let files = vec!["./test_blocklist_integration.list".to_string()];
     let builder = BlocklistBuilder::from(files);
-    let bloom_filter = builder.build();
+    let filter = builder.build();
 
-    assert!(bloom_filter.contains("example.com"));
-    assert!(bloom_filter.contains("blocked.org"));
-    assert!(bloom_filter.contains("anothersite.net"));
-    assert!(!bloom_filter.contains("notblocked.com"));
+    assert!(filter.contains("example.com"));
+    assert!(filter.contains("blocked.org"));
+    assert!(filter.contains("anothersite.net"));
+    assert!(!filter.contains("notblocked.com"));
 
     std::fs::remove_file("./test_blocklist_integration.list").unwrap();
 }

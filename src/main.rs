@@ -1,24 +1,7 @@
-#[cfg(all(feature = "jemalloc", feature = "mimalloc"))]
-compile_error!(
-    "Jemalloc and Mimalloc features are mutually exclusive. Please enable only one of them."
-);
-
 use anyhow::Result;
 use clap::Parser;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-#[cfg(feature = "jemalloc")]
-use tikv_jemallocator::Jemalloc as Malloc;
-
-#[cfg(feature = "mimalloc")]
-use mimalloc::MiMalloc as Malloc;
-
-#[cfg(not(any(feature = "jemalloc", feature = "mimalloc")))]
-use std::alloc::System as Malloc;
-
-#[global_allocator]
-static GLOBAL: Malloc = Malloc;
 
 #[derive(Parser)]
 struct Args {
