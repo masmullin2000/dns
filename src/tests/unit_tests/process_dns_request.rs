@@ -288,7 +288,7 @@ async fn test_process_dns_request_cache_hit() {
     {
         let mut cache_write = cache.write().unwrap();
         cache_write.insert(
-            "cached.com".to_string(),
+            "cached.com",
             dns_cache::IpAddr::new("1.2.3.4".parse().unwrap(), 300),
         );
     }
@@ -352,7 +352,7 @@ async fn test_process_dns_request_upstream_forwarding_success() {
     // Verify cache was populated
     {
         let cache_read = cache.read().unwrap();
-        let cached_addrs = cache_read.get("google.com");
+        let cached_addrs = cache_read.get("google.com", TYPE::A);
         assert!(cached_addrs.is_some());
         let addrs = cached_addrs.unwrap();
         assert!(!addrs.is_empty());
@@ -386,7 +386,7 @@ async fn test_process_dns_request_upstream_forwarding_with_ipv6() {
     // Verify IPv6 cache was populated
     {
         let cache_read = cache.read().unwrap();
-        let cached_addrs = cache_read.get("ipv6.google.com");
+        let cached_addrs = cache_read.get("ipv6.google.com", TYPE::AAAA);
         assert!(cached_addrs.is_some());
         let addrs = cached_addrs.unwrap();
         assert!(!addrs.is_empty());

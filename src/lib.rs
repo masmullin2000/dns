@@ -11,7 +11,8 @@ use config::{RuntimeConfig, StartupConfig};
 use server::{tcp_server, udp_server};
 use tracing::{error, info};
 
-pub async fn run(cfg_str: &str) -> anyhow::Result<()> {
+pub async fn run(cfg_str: impl AsRef<str>) -> anyhow::Result<()> {
+    let cfg_str = cfg_str.as_ref();
     let config: StartupConfig = std::fs::read_to_string(cfg_str)?.parse()?;
     let config: RuntimeConfig = config.into();
     let config = Arc::new(config);
@@ -19,19 +20,14 @@ pub async fn run(cfg_str: &str) -> anyhow::Result<()> {
 
     let cache = Arc::new(RwLock::new(dns_cache::Cache::default()));
 
-    tokio::spawn({
-        let config = config.clone();
-        let cache = cache.clone();
-        async move { _ = udp_server(config, cache).inspect_err(|e| error!("UDP server failed: {e}")) }
-    });
-    tokio::spawn({
-        let cache = cache.clone();
-        async move {
-            tcp_server(config, cache)
-                .await
-                .inspect_err(|e| error!("TCP server failed: {e}"))
-        }
-    });
+    if let Err(e) = udp_server(config.clone(), cache.clone()) {
+        error!("UDP server failed: {e}");
+        std::process::exit(1);
+    }
+    if let Err(e) = tcp_server(config, cache.clone()).await {
+        error!("TCP server failed: {e}");
+        std::process::exit(1);
+    }
 
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
     loop {

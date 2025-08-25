@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use simple_dns as dns;
+
 #[derive(Debug, Clone)]
 pub struct IpAddr {
     ip: std::net::IpAddr,
@@ -18,16 +20,19 @@ impl IpAddr {
 pub struct Cache(HashMap<String, Vec<IpAddr>>);
 
 impl Cache {
-    pub fn get(&self, key: &str) -> Option<Vec<std::net::IpAddr>> {
+    pub fn get(&self, key: &str, ty: dns::TYPE) -> Option<Vec<std::net::IpAddr>> {
         let addrs: Vec<_> = self
             .0
             .get(key)?
             .iter()
             .filter_map(|value| {
-                if value.ttl > std::time::SystemTime::now() {
-                    Some(value.ip)
-                } else {
-                    None
+                if value.ttl <= std::time::SystemTime::now() {
+                    return None;
+                }
+                match (ty, value.ip) {
+                    (dns::TYPE::A, std::net::IpAddr::V4(_))
+                    | (dns::TYPE::AAAA, std::net::IpAddr::V6(_)) => Some(value.ip),
+                    _ => None,
                 }
             })
             .collect();
@@ -39,7 +44,11 @@ impl Cache {
         Some(addrs)
     }
 
-    pub fn insert(&mut self, key: String, value: IpAddr) {
+    pub fn insert<T>(&mut self, key: &T, value: IpAddr)
+    where
+        T: ToString + ?Sized,
+    {
+        let key = key.to_string();
         self.0
             .entry(key)
             .and_modify(|e| {

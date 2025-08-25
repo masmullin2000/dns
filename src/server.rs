@@ -1,6 +1,7 @@
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::{Arc, RwLock},
+    time::Duration,
 };
 
 use anyhow::Result;
@@ -20,8 +21,10 @@ const ADDR: &str = "0.0.0.0:53";
 const LOCAL_ADDR: &str = "127.0.0.53:53";
 const MAX_PKT_SIZE: usize = 65535;
 const TCP_DNS_LEN_BYTES_SZ: usize = 2; // The first two bytes of a TCP DNS packet are the length of the packet
+const WAIT_FOR_DNS_REQ: Duration = Duration::from_millis(500);
 
 type Sender = AsyncSender<ChannelData>;
+type TcpSender = AsyncSender<(Vec<u8>, tokio::net::TcpStream)>;
 
 pub struct ChannelData {
     pub bytes: Vec<u8>,
@@ -70,6 +73,9 @@ impl DnsAnswers for dns::Question<'_> {
         const TTL: u32 = 300; // 5 minutes
 
         let name = self.qname.to_string();
+        let dns::QTYPE::TYPE(ty) = self.qtype else {
+            return None;
+        };
 
         #[allow(
             clippy::significant_drop_tightening,
@@ -80,7 +86,11 @@ impl DnsAnswers for dns::Question<'_> {
             vec![IpAddr::V4(Ipv4Addr::LOCALHOST)]
         } else if let Some(addr) = config.has_addr(&name) {
             vec![addr]
-        } else if let Some(addr) = cache.read().expect("cache read lock poisoned").get(&name) {
+        } else if let Some(addr) = cache
+            .read()
+            .expect("cache read lock poisoned")
+            .get(&name, ty)
+        {
             debug!("Cache hit for {name}: {addr:?}");
             addr
         } else {
@@ -90,6 +100,11 @@ impl DnsAnswers for dns::Question<'_> {
             dns::QCLASS::CLASS(class) => class,
             dns::QCLASS::ANY => dns::CLASS::NONE,
         };
+        match self.qtype {
+            dns::QTYPE::TYPE(dns::TYPE::A | dns::TYPE::AAAA) => {}
+            // dns::QTYPE::ANY => {}
+            _ => return None,
+        }
         Some(
             addr.into_iter()
                 .map(|addr| {
@@ -122,36 +137,39 @@ where
         anyhow::bail!("Failed to parse DNS packet");
     };
 
-    pkt.set_flags(
-        dns::PacketFlag::RESPONSE
-            | dns::PacketFlag::RECURSION_DESIRED
-            | dns::PacketFlag::RECURSION_AVAILABLE,
-    );
+    // only check the cache for single question packets
+    if pkt.questions.len() == 1 {
+        pkt.set_flags(
+            dns::PacketFlag::RESPONSE
+                | dns::PacketFlag::RECURSION_DESIRED
+                | dns::PacketFlag::RECURSION_AVAILABLE,
+        );
 
-    let answers: Vec<_> = pkt
-        .questions
-        .iter()
-        .filter_map(|question| question.check(config, cache))
-        .flatten()
-        .collect();
+        let answers: Vec<_> = pkt
+            .questions
+            .iter()
+            .filter_map(|question| question.check(config, cache))
+            .flatten()
+            .collect();
 
-    if !answers.is_empty() {
-        pkt.answers = answers;
-        let Ok(reply_data) = pkt.build_bytes_vec() else {
-            anyhow::bail!("Failed to build custom DNS reply packet");
-        };
-        let reply = if dns_start_location > 0 {
-            let length = u16::try_from(reply_data.len())
-                .map_err(|_| anyhow::anyhow!("Reply data too long"))?;
-            let mut reply = Vec::with_capacity(dns_start_location + reply_data.len());
-            reply.extend_from_slice(&length.to_be_bytes());
-            reply.extend_from_slice(&reply_data);
-            reply
-        } else {
-            reply_data
-        };
-        trace!("Cached DNS reply for {who}");
-        return Ok(reply);
+        if !answers.is_empty() {
+            pkt.answers = answers;
+            let Ok(reply_data) = pkt.build_bytes_vec() else {
+                anyhow::bail!("Failed to build custom DNS reply packet");
+            };
+            let reply = if dns_start_location > 0 {
+                let length = u16::try_from(reply_data.len())
+                    .map_err(|_| anyhow::anyhow!("Reply data too long"))?;
+                let mut reply = Vec::with_capacity(dns_start_location + reply_data.len());
+                reply.extend_from_slice(&length.to_be_bytes());
+                reply.extend_from_slice(&reply_data);
+                reply
+            } else {
+                reply_data
+            };
+            trace!("Cached DNS reply for {who}");
+            return Ok(reply);
+        }
     }
 
     let bytes = Arc::new(bytes);
@@ -190,12 +208,12 @@ where
             match rr.rdata {
                 dns::rdata::RData::A(a) => {
                     let addr = IpAddr::V4(Ipv4Addr::from(a.address));
-                    cache.insert(qname.to_string(), dns_cache::IpAddr::new(addr, ttl));
+                    cache.insert(qname, dns_cache::IpAddr::new(addr, ttl));
                     trace!("for {who} - {qname}:{ttl} A: {addr}");
                 }
                 dns::rdata::RData::AAAA(a) => {
                     let addr = IpAddr::V6(Ipv6Addr::from(a.address));
-                    cache.insert(qname.to_string(), dns_cache::IpAddr::new(addr, ttl));
+                    cache.insert(qname, dns_cache::IpAddr::new(addr, ttl));
                     trace!("for {who} - {qname}:{ttl} AAAA: {addr}");
                 }
                 _ => (),
@@ -219,8 +237,7 @@ pub fn udp_server(config: Arc<RuntimeConfig>, cache: Arc<RwLock<dns_cache::Cache
         dns_sock.connect(ns).await?;
         dns_sock.send(bytes).await?;
 
-        let dur = std::time::Duration::from_millis(500);
-        let sz = timeout(dur, dns_sock.recv(&mut rec_buf)).await??;
+        let sz = timeout(WAIT_FOR_DNS_REQ, dns_sock.recv(&mut rec_buf)).await??;
         rec_buf.truncate(sz);
         Ok(rec_buf)
     };
@@ -248,15 +265,20 @@ pub fn udp_server(config: Arc<RuntimeConfig>, cache: Arc<RwLock<dns_cache::Cache
     let recv_loop = |sock: Arc<tokio::net::UdpSocket>, tx: Sender| async move {
         let mut buf = vec![0u8; MAX_PKT_SIZE];
         loop {
-            let Ok((sz, addr)) = sock.recv_from(&mut buf).await.inspect_err(|e| {
-                error!("Failed to receive DNS packet: {e}");
-            }) else {
+            let Ok((sz, addr)) = sock
+                .recv_from(&mut buf)
+                .await
+                .inspect(|(_, addr)| debug!("Received UDP DNS request from {addr}"))
+                .inspect_err(|e| {
+                    error!("Failed to receive DNS packet: {e}");
+                })
+            else {
                 continue;
             };
             let buf = buf[..sz].to_vec();
-            tx.send(ChannelData::new(buf, addr, sock.clone()))
-                .await
-                .unwrap_or_else(|e| panic!("{sock:?} channel send failed: {e}"));
+            if let Err(e) = tx.send(ChannelData::new(buf, addr, sock.clone())).await {
+                panic!("{sock:?} channel send failed: {e}");
+            }
         }
     };
 
@@ -270,13 +292,10 @@ pub async fn tcp_server(
     config: Arc<RuntimeConfig>,
     cache: Arc<RwLock<dns_cache::Cache>>,
 ) -> anyhow::Result<()> {
-    let sock = tokio::net::TcpListener::bind("0.0.0.0:53")
+    let sock = tokio::net::TcpListener::bind(ADDR)
         .await
+        .inspect(|_| info!("TCP socket listening on {ADDR}"))
         .inspect_err(|e| error!("Failed to bind TCP socket: {e}"))?;
-    let sock = Arc::new(sock);
-    let r_sock = sock.clone();
-
-    info!("TCP Socket listening on {}", sock.local_addr()?);
 
     let (tx, mut rx) = AsyncChannel::<(Vec<u8>, tokio::net::TcpStream)>(1000);
 
@@ -285,9 +304,8 @@ pub async fn tcp_server(
 
         sock.write_all(bytes).await?;
 
-        let dur = std::time::Duration::from_millis(500);
         // dont remove the buffer length prefix
-        let rec_buf = timeout(dur, sock.read_dns()).await??;
+        let rec_buf = timeout(WAIT_FOR_DNS_REQ, sock.read_dns()).await??;
         warn!("TCP DNS request received: {} bytes", rec_buf.len());
 
         Ok(rec_buf)
@@ -316,34 +334,43 @@ pub async fn tcp_server(
         }
     });
 
-    loop {
-        let Ok((mut sock, _)) = r_sock.accept().await.inspect_err(|e| {
-            error!("Failed to accept TCP connection: {e}");
-        }) else {
-            continue;
-        };
-
-        let sock_addr = sock
-            .peer_addr()
-            .map_or_else(|_| "unknown socket".to_string(), |a| a.to_string());
-
-        let dur = std::time::Duration::from_millis(500);
-        let buf = match timeout(dur, Box::pin(sock.read_dns())).await {
-            Ok(Ok(buf)) => buf,
-            Ok(Err(e)) => {
-                error!("Failed to read from TCP socket: {sock_addr} - {e}");
+    let recv_loop = |r_sock: tokio::net::TcpListener, tx: TcpSender| async move {
+        loop {
+            let Ok((mut sock, _)) = r_sock
+                .accept()
+                .await
+                .inspect(|(_, addr)| debug!("Received TCP DNS request from {addr}"))
+                .inspect_err(|e| {
+                    error!("Failed to accept TCP connection: {e}");
+                })
+            else {
                 continue;
-            }
-            Err(_) => {
-                warn!("Timeout while waiting for data on TCP socket: {sock_addr}");
-                continue;
-            }
-        };
+            };
 
-        if let Err(e) = tx.send((buf, sock)).await {
-            anyhow::bail!("Channel send failed: {e}");
+            let sock_addr = sock
+                .peer_addr()
+                .map_or_else(|_| "unknown socket".to_string(), |a| a.to_string());
+
+            let buf = match timeout(WAIT_FOR_DNS_REQ, Box::pin(sock.read_dns())).await {
+                Ok(Ok(buf)) => buf,
+                Ok(Err(e)) => {
+                    error!("Failed to read from TCP socket: {sock_addr} - {e}");
+                    continue;
+                }
+                Err(_) => {
+                    warn!("Timeout while waiting for data on TCP socket: {sock_addr}");
+                    continue;
+                }
+            };
+
+            if let Err(e) = tx.send((buf, sock)).await {
+                panic!("channel send failed: {e}");
+            }
         }
-    }
+    };
+
+    tokio::spawn(recv_loop(sock, tx));
+    Ok(())
 }
 
 fn dns_break(buf: &[u8]) -> Option<Vec<u8>> {
@@ -381,7 +408,7 @@ impl Eof for tokio::net::TcpStream {
         EOF: Fn() -> Result<()>,
         BF: Fn(&[u8]) -> Option<Vec<u8>>,
     {
-        const EOF_DUR: std::time::Duration = std::time::Duration::from_millis(50);
+        const EOF_DUR: Duration = Duration::from_millis(50);
         let mut data = vec![0u8; MAX_PKT_SIZE];
 
         let mut buf = Vec::default();
