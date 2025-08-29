@@ -3,7 +3,7 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use tracing::{debug, error};
 
-use crate::block_filter::{BlockFilter, BlocklistBuilder};
+use crate::block_filter::{BlockFilter, BlockFilterBuilder};
 
 #[derive(Deserialize, Default, Debug)]
 pub struct StartupConfig {
@@ -12,8 +12,8 @@ pub struct StartupConfig {
     pub nameservers: Nameservers,
     #[serde(default = "Domains::default")]
     pub local_domains: Domains,
-    #[serde(default = "Blocklists::default")]
-    pub blocklists: Blocklists,
+    #[serde(default = "BlockFilters::default")]
+    pub blocklists: BlockFilters,
 }
 
 #[derive(Debug)]
@@ -30,7 +30,7 @@ pub struct Domains {
 }
 
 #[derive(Deserialize, Default, Debug)]
-pub struct Blocklists {
+pub struct BlockFilters {
     pub files: Option<Vec<String>>,
 }
 
@@ -111,7 +111,7 @@ impl RuntimeConfig {
 impl From<StartupConfig> for RuntimeConfig {
     fn from(startup: StartupConfig) -> Self {
         // Load blocklists
-        let blocklist_builder = BlocklistBuilder::from(startup.blocklists.files);
+        let blocklist_builder = BlockFilterBuilder::from(startup.blocklists.files);
 
         // Build filter
         let block_filter = blocklist_builder.build();

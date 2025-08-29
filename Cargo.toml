@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ahash = { version = "0.8", default-features = false, features = ["std", "no-rng"] }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 crossbeam-channel = "0.5"
