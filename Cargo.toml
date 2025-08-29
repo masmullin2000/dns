@@ -4,19 +4,27 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-ahash = { version = "0.8", default-features = false, features = ["std", "no-rng"] }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 crossbeam-channel = "0.5"
+foldhash = "0.2"
 futures = "0.3"
 simple-dns = "0.11"
 socket2 = { version = "0.6", features = ["all"] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = [
+    "io-util",
+    "macros",
+    "net",
+    "rt",
+    "rt-multi-thread",
+    "sync",
+    "time",
+] }
 serde = { version = "1", features = ["derive"] }
 toml = { version = "0.9", features = ["preserve_order"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-tracing-journald = "0.3.1"
+tracing-journald = "0.3"
 
 [dev-dependencies]
 criterion = { version = "0.7", features = ["async_tokio"] }
