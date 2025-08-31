@@ -35,6 +35,33 @@ impl BlockFilter {
         self.set = set;
     }
 
+    #[allow(dead_code)]
+    fn add(&mut self, name: &str) {
+        let name = if name.is_empty() {
+            return;
+        } else if let Some(name) = name.strip_prefix("*.") {
+            name
+        } else {
+            name
+        };
+
+        let val = hash_str(name);
+        self.set.insert(val);
+    }
+
+    #[allow(dead_code)]
+    fn remove(&mut self, name: &str) {
+        let name = if name.is_empty() {
+            return;
+        } else if let Some(name) = name.strip_prefix("*.") {
+            name
+        } else {
+            name
+        };
+        let val = hash_str(name);
+        self.set.remove(&val);
+    }
+
     pub fn contains(&self, name: &str) -> bool {
         let val = hash_str(name);
         self.set.contains(&val)
