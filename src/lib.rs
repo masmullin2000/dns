@@ -3,6 +3,7 @@
 mod block_filter;
 pub mod config;
 mod dns_cache;
+mod dot_client;
 mod server;
 
 use std::sync::{Arc, RwLock};
@@ -19,12 +20,20 @@ pub async fn run(cfg_str: impl AsRef<str>) -> anyhow::Result<()> {
     info!("Loaded DNS configuration from {cfg_str}");
 
     let cache = Arc::new(RwLock::new(dns_cache::Cache::default()));
+    let dot_pool = Arc::new(dot_client::DotConnectionPool::new());
 
-    if let Err(e) = udp_server(config.clone(), cache.clone()) {
+    if !config.get_dot_servers().is_empty() {
+        info!(
+            "DNS over TLS enabled with {} servers",
+            config.get_dot_servers().len()
+        );
+    }
+
+    if let Err(e) = udp_server(config.clone(), cache.clone(), dot_pool.clone()) {
         error!("UDP server failed: {e}");
         std::process::exit(1);
     }
-    if let Err(e) = tcp_server(config, cache.clone()).await {
+    if let Err(e) = tcp_server(config.clone(), cache.clone(), dot_pool.clone()).await {
         error!("TCP server failed: {e}");
         std::process::exit(1);
     }
@@ -35,6 +44,7 @@ pub async fn run(cfg_str: impl AsRef<str>) -> anyhow::Result<()> {
         if let Ok(mut cache) = cache.write() {
             cache.prune();
         }
+        dot_pool.cleanup_expired().await;
     }
 }
 

@@ -5,6 +5,8 @@ use tracing::{debug, error};
 
 use crate::block_filter::{BlockFilter, BlockFilterBuilder};
 
+const DEFAULT_DOT_PORT: u16 = 853;
+
 #[derive(Deserialize, Default, Debug)]
 pub struct StartupConfig {
     pub local_network: LocalNetwork,
@@ -22,6 +24,7 @@ pub struct RuntimeConfig {
     pub local_domains: Domains,
     pub block_filter: BlockFilter,
     pub nameservers: Vec<std::net::SocketAddr>,
+    pub dot_servers: Vec<DotServer>,
 }
 
 #[derive(Deserialize, Default, Debug)]
@@ -37,6 +40,19 @@ pub struct BlockFilters {
 #[derive(Deserialize, Default, Debug)]
 pub struct Nameservers {
     pub ip4: HashSet<String>,
+    pub dot: Option<Vec<DotServer>>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct DotServer {
+    pub hostname: String,
+    #[serde(default = "default_dot_port")]
+    pub port: u16,
+    pub ip: std::net::IpAddr,
+}
+
+fn default_dot_port() -> u16 {
+    DEFAULT_DOT_PORT
 }
 
 #[derive(Deserialize, Default, Clone, Debug)]
@@ -106,6 +122,11 @@ impl RuntimeConfig {
     pub fn get_nameservers(&self) -> &[std::net::SocketAddr] {
         &self.nameservers
     }
+
+    #[must_use]
+    pub fn get_dot_servers(&self) -> &[DotServer] {
+        &self.dot_servers
+    }
 }
 
 impl From<StartupConfig> for RuntimeConfig {
@@ -134,11 +155,14 @@ impl From<StartupConfig> for RuntimeConfig {
 
         debug!("Cached {} nameservers", nameservers.len());
 
+        let dot_servers = startup.nameservers.dot.unwrap_or_default();
+
         Self {
             local_network: startup.local_network,
             local_domains: startup.local_domains,
             block_filter,
             nameservers,
+            dot_servers,
         }
     }
 }

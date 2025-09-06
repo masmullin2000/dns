@@ -15,7 +15,7 @@ use tokio::{
 };
 use tracing::{debug, error, info, trace, warn};
 
-use crate::{config::RuntimeConfig, dns_cache};
+use crate::{config::RuntimeConfig, dns_cache, dot_client};
 
 const ADDR: &str = "0.0.0.0:53";
 const LOCAL_ADDR: &str = "127.0.0.53:53";
@@ -119,6 +119,7 @@ impl DnsAnswers for dns::Question<'_> {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 async fn process_dns_request<F>(
     who: &SocketAddr,
     config: &RuntimeConfig,
@@ -126,6 +127,7 @@ async fn process_dns_request<F>(
     bytes: Vec<u8>,
     dns_start_location: usize, // for TCP this should be 2, for UDP it should be 0
     get_data: F,
+    dot_pool: Option<&dot_client::DotConnectionPool>,
 ) -> Result<Vec<u8>>
 where
     F: Clone + AsyncFn(&SocketAddr, &Arc<Vec<u8>>) -> Result<Vec<u8>>,
@@ -174,6 +176,81 @@ where
 
     let bytes = Arc::new(bytes);
 
+    // Try DoT servers first if available
+    if let Some(pool) = dot_pool {
+        let dot_servers = config.get_dot_servers();
+        if !dot_servers.is_empty() {
+            let dot_futures = dot_servers.iter().map(|server| {
+                let b = bytes.clone();
+                Box::pin(async move {
+                    let query = if dns_start_location > 0 {
+                        // For TCP, skip the length prefix
+                        &b[dns_start_location..]
+                    } else {
+                        // For UDP, use the whole packet
+                        &b[..]
+                    };
+                    let response_data = dot_client::query_dot_server(server, query, pool)
+                        .await
+                        .inspect_err(|e| {
+                            debug!(
+                                "DoT query to {}:{} failed: {}",
+                                server.hostname, server.port, e
+                            );
+                        })?;
+                    Ok::<_, anyhow::Error>((
+                        format!("{}:{}", server.hostname, server.port),
+                        response_data,
+                    ))
+                })
+            });
+
+            if let Ok((server_str, response_data)) = select_all(dot_futures).await.0 {
+                debug!("Received DNS response from DoT server {}", server_str);
+                let pkt = dns::Packet::parse(&response_data)
+                    .inspect_err(|e| error!("Failed to parse DNS packet from DoT: {e}"))?;
+
+                if let Some(question) = pkt.questions.first() {
+                    let qname = &question.qname;
+                    let mut cache_guard = cache.write().expect("cache write lock poisoned");
+                    for rr in pkt.answers {
+                        let ttl = rr.ttl;
+                        if ttl == 0 {
+                            continue;
+                        }
+                        match rr.rdata {
+                            dns::rdata::RData::A(a) => {
+                                let addr = IpAddr::V4(Ipv4Addr::from(a.address));
+                                cache_guard.insert(qname, dns_cache::IpAddr::new(addr, ttl));
+                                trace!("for {who} - {qname}:{ttl} A: {addr} (via DoT)");
+                            }
+                            dns::rdata::RData::AAAA(a) => {
+                                let addr = IpAddr::V6(Ipv6Addr::from(a.address));
+                                cache_guard.insert(qname, dns_cache::IpAddr::new(addr, ttl));
+                                trace!("for {who} - {qname}:{ttl} AAAA: {addr} (via DoT)");
+                            }
+                            _ => (),
+                        }
+                    }
+                    drop(cache_guard);
+                }
+
+                // Add length prefix for TCP responses
+                if dns_start_location > 0 {
+                    let length = u16::try_from(response_data.len())
+                        .map_err(|_| anyhow::anyhow!("Reply data too long"))?;
+                    let mut reply = Vec::with_capacity(dns_start_location + response_data.len());
+                    reply.extend_from_slice(&length.to_be_bytes());
+                    reply.extend_from_slice(&response_data);
+                    return Ok(reply);
+                }
+                return Ok(response_data);
+            }
+            debug!("All DoT servers failed, falling back to plain DNS");
+        }
+    }
+
+    // Fallback to plain DNS
     let futures = config.get_nameservers().iter().map(|ns| {
         let get_response_from_ns = get_data.clone();
         let b = bytes.clone();
@@ -224,7 +301,11 @@ where
     Ok(response_data)
 }
 
-pub fn udp_server(config: Arc<RuntimeConfig>, cache: Arc<RwLock<dns_cache::Cache>>) -> Result<()> {
+pub fn udp_server(
+    config: Arc<RuntimeConfig>,
+    cache: Arc<RwLock<dns_cache::Cache>>,
+    dot_pool: Arc<dot_client::DotConnectionPool>,
+) -> Result<()> {
     let remote_sock = Arc::new(udp_sock(ADDR)?);
     let local_sock = Arc::new(udp_sock(LOCAL_ADDR)?);
 
@@ -246,13 +327,22 @@ pub fn udp_server(config: Arc<RuntimeConfig>, cache: Arc<RwLock<dns_cache::Cache
         while let Some(channel_data) = rx.recv().await {
             let config = config.clone();
             let cache = cache.clone();
+            let dot_pool = dot_pool.clone();
             tokio::spawn(async move {
                 let bytes = channel_data.bytes;
                 let addr = channel_data.addr;
                 let sock = channel_data.sock;
 
-                if let Ok(reply_data) =
-                    process_dns_request(&addr, &config, &cache, bytes, 0, get_data).await
+                if let Ok(reply_data) = process_dns_request(
+                    &addr,
+                    &config,
+                    &cache,
+                    bytes,
+                    0,
+                    get_data,
+                    Some(&*dot_pool),
+                )
+                .await
                 {
                     _ = sock.send_to(&reply_data, &addr).await.inspect_err(|e| {
                         error!("Failed to send DNS packet to {addr}: {e}");
@@ -291,6 +381,7 @@ pub fn udp_server(config: Arc<RuntimeConfig>, cache: Arc<RwLock<dns_cache::Cache
 pub async fn tcp_server(
     config: Arc<RuntimeConfig>,
     cache: Arc<RwLock<dns_cache::Cache>>,
+    dot_pool: Arc<dot_client::DotConnectionPool>,
 ) -> anyhow::Result<()> {
     let sock = tokio::net::TcpListener::bind(ADDR)
         .await
@@ -315,6 +406,7 @@ pub async fn tcp_server(
         while let Some((bytes, mut sock)) = rx.recv().await {
             let config = config.clone();
             let cache = cache.clone();
+            let dot_pool = dot_pool.clone();
             let peer = sock.peer_addr().expect("Failed to get peer address");
             tokio::spawn(async move {
                 if let Ok(reply_data) = process_dns_request(
@@ -324,6 +416,7 @@ pub async fn tcp_server(
                     bytes,
                     TCP_DNS_LEN_BYTES_SZ,
                     get_data,
+                    Some(&*dot_pool),
                 )
                 .await
                     && let Err(e) = sock.write_all(&reply_data).await
@@ -464,5 +557,14 @@ pub async fn process_dns_request_test<F>(
 where
     F: AsyncFn(&SocketAddr, &Arc<Vec<u8>>) -> Result<Vec<u8>> + Clone,
 {
-    process_dns_request(who, config, cache, bytes, dns_start_location, get_data).await
+    process_dns_request(
+        who,
+        config,
+        cache,
+        bytes,
+        dns_start_location,
+        get_data,
+        None,
+    )
+    .await
 }
