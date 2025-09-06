@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use crate::block_filter::{BlockFilter, BlockFilterBuilder};
 use crate::dot_client;
@@ -17,6 +17,8 @@ pub struct StartupConfig {
     pub local_domains: Domains,
     #[serde(default = "BlockFilters::default")]
     pub blocklists: BlockFilters,
+    #[serde(default = "bool::default")]
+    pub force_dot: bool,
 }
 
 // #[derive(Debug)]
@@ -27,6 +29,7 @@ pub struct RuntimeConfig {
     pub nameservers: Vec<std::net::SocketAddr>,
     pub dot_servers: Vec<DotServer>,
     pub dot_pool: dot_client::DotConnectionPool,
+    pub force_dot: bool,
 }
 
 #[derive(Deserialize, Default, Debug)]
@@ -67,10 +70,13 @@ impl std::str::FromStr for StartupConfig {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        toml::from_str(s).map_err(|e| {
+        let me = toml::from_str(s).map_err(|e| {
             error!("error: {e}");
             anyhow::anyhow!("Failed to parse configuration: {e}")
-        })
+        });
+
+        info!("StartupConfig: {me:#?}");
+        me
     }
 }
 
@@ -166,6 +172,7 @@ impl From<StartupConfig> for RuntimeConfig {
             nameservers,
             dot_servers,
             dot_pool: dot_client::DotConnectionPool::default(),
+            force_dot: startup.force_dot,
         }
     }
 }

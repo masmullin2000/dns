@@ -134,6 +134,11 @@ async fn dot_query(
     }
 
     let dot_futures = dot_servers.iter().map(|server| {
+        let host = server.hostname.as_str();
+        let port = server.port;
+
+        debug!("Sending DNS query to DoT server {host}:{port}");
+
         Box::pin(async move {
             let query = if dns_start_location > 0 {
                 // For TCP, skip the length prefix
@@ -145,15 +150,10 @@ async fn dot_query(
             let response_data = dot_client::query_dot_server(server, query, pool)
                 .await
                 .inspect_err(|e| {
-                    debug!(
-                        "DoT query to {}:{} failed: {}",
-                        server.hostname, server.port, e
-                    );
+                    warn!("DoT query to {host}:{port} failed: {e}");
                 })?;
-            Ok::<_, anyhow::Error>((
-                format!("{}:{}", server.hostname, server.port),
-                response_data,
-            ))
+
+            Ok::<_, anyhow::Error>((format!("{host}:{port}"), response_data))
         })
     });
 
@@ -175,7 +175,7 @@ async fn dot_query(
         return Ok(Some(response_data));
     }
 
-    debug!("All DoT servers failed, falling back to plain DNS");
+    warn!("All DoT servers failed, falling back to plain DNS");
     Ok(None)
 }
 
@@ -233,6 +233,8 @@ where
         anyhow::bail!("Failed to parse DNS packet");
     };
 
+    debug!("Received DNS request from {client_addr}: {pkt:?}");
+
     // only check the cache for single question packets
     if pkt.questions.len() == 1 {
         pkt.set_flags(
@@ -282,6 +284,10 @@ where
     .await?
     {
         return Ok(response);
+    }
+
+    if config.force_dot {
+        anyhow::bail!("All DoT servers failed and force_dot is enabled");
     }
 
     // Fallback to plain DNS
@@ -339,7 +345,11 @@ pub fn udp_server(config: Arc<RuntimeConfig>, cache: Arc<RwLock<dns_cache::Cache
                 let sock = channel_data.sock;
 
                 if let Ok(reply_data) =
-                    process_dns_request(&addr, &config, &cache, bytes, 0, get_data).await
+                    process_dns_request(&addr, &config, &cache, bytes, 0, get_data)
+                        .await
+                        .inspect_err(|e| {
+                            error!("UDP Failed to process DNS request from {addr}: {e}");
+                        })
                 {
                     _ = sock.send_to(&reply_data, &addr).await.inspect_err(|e| {
                         error!("Failed to send DNS packet to {addr}: {e}");
@@ -413,7 +423,9 @@ pub async fn tcp_server(
                     get_data,
                 )
                 .await
-                    && let Err(e) = sock.write_all(&reply_data).await
+                .inspect_err(|e| {
+                    error!("TCP Failed to process DNS request from {peer}: {e}");
+                }) && let Err(e) = sock.write_all(&reply_data).await
                 {
                     error!("Failed to send DNS packet to {sock:?}: {e}");
                 }
