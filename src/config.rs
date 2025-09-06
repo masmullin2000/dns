@@ -1,10 +1,10 @@
 use anyhow::Result;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use tracing::{debug, error, info};
 
 use crate::block_filter::{BlockFilter, BlockFilterBuilder};
-use crate::dot_client;
 
 const DEFAULT_DOT_PORT: u16 = 853;
 
@@ -28,8 +28,8 @@ pub struct RuntimeConfig {
     pub block_filter: BlockFilter,
     pub nameservers: Vec<std::net::SocketAddr>,
     pub dot_servers: Vec<DotServer>,
-    pub dot_pool: dot_client::DotConnectionPool,
     pub force_dot: bool,
+    pub tls_config: Arc<rustls::ClientConfig>,
 }
 
 #[derive(Deserialize, Default, Debug)]
@@ -164,6 +164,15 @@ impl From<StartupConfig> for RuntimeConfig {
         debug!("Cached {} nameservers", nameservers.len());
 
         let dot_servers = startup.nameservers.dot.unwrap_or_default();
+        // Install the default crypto provider (ring)
+        _ = rustls::crypto::ring::default_provider().install_default();
+
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+        let tls_config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
 
         Self {
             local_network: startup.local_network,
@@ -171,8 +180,8 @@ impl From<StartupConfig> for RuntimeConfig {
             block_filter,
             nameservers,
             dot_servers,
-            dot_pool: dot_client::DotConnectionPool::default(),
             force_dot: startup.force_dot,
+            tls_config: Arc::new(tls_config),
         }
     }
 }

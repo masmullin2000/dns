@@ -121,62 +121,91 @@ impl DnsAnswers for dns::Question<'_> {
 }
 
 async fn dot_query(
-    client_addr: &SocketAddr,
     config: &RuntimeConfig,
-    cache: &Arc<RwLock<dns_cache::Cache>>,
     bytes: &Arc<Vec<u8>>,
     dns_start_location: usize,
-    pool: &dot_client::DotConnectionPool,
-) -> Result<Option<Vec<u8>>> {
-    let dot_servers = config.get_dot_servers();
-    if dot_servers.is_empty() {
-        return Ok(None);
-    }
+) -> Result<Option<(String, Vec<u8>)>> {
+    let query = if dns_start_location > 0 {
+        // For TCP, skip the length prefix
+        &bytes[dns_start_location..]
+    } else {
+        // For UDP, use the whole packet
+        &bytes[..]
+    };
 
-    let dot_futures = dot_servers.iter().map(|server| {
-        let host = server.hostname.as_str();
+    for server in config.get_dot_servers() {
+        let host = server.hostname.clone();
         let port = server.port;
 
-        debug!("Sending DNS query to DoT server {host}:{port}");
+        let Ok(mut conn) = dot_client::DotConnection::try_new(server, &config.tls_config).await
+        else {
+            continue;
+        };
 
-        Box::pin(async move {
-            let query = if dns_start_location > 0 {
-                // For TCP, skip the length prefix
-                &bytes[dns_start_location..]
-            } else {
-                // For UDP, use the whole packet
-                &bytes[..]
-            };
-            let response_data = dot_client::query_dot_server(server, query, pool)
-                .await
-                .inspect_err(|e| {
-                    warn!("DoT query to {host}:{port} failed: {e}");
-                })?;
+        let Ok(res) = conn.send_query(query).await.inspect_err(|e| {
+            warn!("DoT query to {host}:{port} failed: {e}");
+        }) else {
+            continue;
+        };
 
-            Ok::<_, anyhow::Error>((format!("{host}:{port}"), response_data))
-        })
-    });
-
-    if let Ok((server_str, response_data)) = select_all(dot_futures).await.0 {
-        debug!("Received DNS response from DoT server {}", server_str);
-        cache_dns_packet(&response_data, 0, cache, client_addr)
-            .inspect(|()| debug!("Received DNS response from {server_str}"))
-            .inspect_err(|e| error!("Failed to parse DNS packet: {e}"))?;
-
-        // Add length prefix for TCP responses
-        if dns_start_location > 0 {
-            let length = u16::try_from(response_data.len())
-                .map_err(|_| anyhow::anyhow!("Reply data too long"))?;
-            let mut reply = Vec::with_capacity(dns_start_location + response_data.len());
-            reply.extend_from_slice(&length.to_be_bytes());
-            reply.extend_from_slice(&response_data);
-            return Ok(Some(reply));
-        }
-        return Ok(Some(response_data));
+        return Ok(Some((host, res)));
     }
-
-    warn!("All DoT servers failed, falling back to plain DNS");
     Ok(None)
+
+    // let dot_futures = dot_servers.iter().map(|server| {
+    //     let host = server.hostname.as_str();
+    //     let port = server.port;
+    //
+    //     debug!("Sending DNS query to DoT server {host}:{port}");
+    //
+    //     Box::pin(async move {
+    //         let query = if dns_start_location > 0 {
+    //             // For TCP, skip the length prefix
+    //             &bytes[dns_start_location..]
+    //         } else {
+    //             // For UDP, use the whole packet
+    //             &bytes[..]
+    //         };
+    //         let response_data = dot_client::query_dot_server(server, query, pool)
+    //             .await
+    //             .inspect_err(|e| {
+    //                 warn!("DoT query to {host}:{port} failed: {e}");
+    //             })?;
+    //             // .expect("REMOVE ME");
+    //
+    //         Ok::<_, anyhow::Error>((format!("{host}:{port}"), response_data))
+    //     })
+    // });
+    //
+    // let res = if let (Ok((ns, response_data)), _, remaining_futures) = select_all(dot_futures).await
+    // {
+    //     // if let Ok((server_str, response_data)) = select_all(dot_futures.clone()).await {
+    //     debug!("Received DNS response from DoT server {}", ns);
+    //     cache_dns_packet(&response_data, 0, cache, client_addr)
+    //         .inspect(|()| debug!("Received DNS response from {ns}"))
+    //         .inspect_err(|e| error!("Failed to parse DNS packet: {e}"))?;
+    //
+    //     // Add length prefix for TCP responses
+    //     let res = if dns_start_location > 0 {
+    //         let length = u16::try_from(response_data.len())
+    //             .map_err(|_| anyhow::anyhow!("Reply data too long"))?;
+    //         let mut reply = Vec::with_capacity(dns_start_location + response_data.len());
+    //         reply.extend_from_slice(&length.to_be_bytes());
+    //         reply.extend_from_slice(&response_data);
+    //         Some(reply)
+    //     } else {
+    //         Some(response_data)
+    //     };
+    //     for fut in remaining_futures {
+    //         let _ = fut.await;
+    //     }
+    //     res
+    // } else {
+    //     None
+    // };
+    //
+    // warn!("All DoT servers failed, falling back to plain DNS");
+    // Ok(res)
 }
 
 #[allow(clippy::significant_drop_tightening)]
@@ -226,6 +255,7 @@ async fn process_dns_request<F>(
 where
     F: Clone + AsyncFn(&SocketAddr, &Arc<Vec<u8>>) -> Result<Vec<u8>>,
 {
+    #[allow(unused_mut)]
     let Ok(mut pkt) = dns::Packet::parse(&bytes[dns_start_location..])
         .inspect_err(|e| error!("failed to parse DNS Question: {e}"))
     else {
@@ -273,16 +303,11 @@ where
     let bytes = Arc::new(bytes);
 
     // Try DoT servers first if available
-    if let Some(response) = dot_query(
-        client_addr,
-        config,
-        cache,
-        &bytes,
-        dns_start_location,
-        &config.dot_pool,
-    )
-    .await?
-    {
+    if let Some((ns, response)) = dot_query(config, &bytes, dns_start_location).await? {
+        cache_dns_packet(&response, dns_start_location, cache, client_addr)
+            .inspect(|()| debug!("Received DNS response from DoT {ns}"))
+            .inspect_err(|e| error!("Failed to parse DNS packet: {e}"))?;
+
         return Ok(response);
     }
 

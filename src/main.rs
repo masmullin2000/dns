@@ -51,7 +51,7 @@ fn main() -> Result<()> {
 
     std::panic::set_hook(Box::new(|p| {
         error!("DNS server panic: {p:?}");
-        std::process::exit(1);
+        // std::process::exit(1);
     }));
 
     let config = args.config.as_str();
