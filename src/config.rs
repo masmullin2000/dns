@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use tracing::{debug, error};
 
 use crate::block_filter::{BlockFilter, BlockFilterBuilder};
+use crate::dot_client;
 
 const DEFAULT_DOT_PORT: u16 = 853;
 
@@ -18,13 +19,14 @@ pub struct StartupConfig {
     pub blocklists: BlockFilters,
 }
 
-#[derive(Debug)]
+// #[derive(Debug)]
 pub struct RuntimeConfig {
     pub local_network: LocalNetwork,
     pub local_domains: Domains,
     pub block_filter: BlockFilter,
     pub nameservers: Vec<std::net::SocketAddr>,
     pub dot_servers: Vec<DotServer>,
+    pub dot_pool: dot_client::DotConnectionPool,
 }
 
 #[derive(Deserialize, Default, Debug)]
@@ -51,7 +53,7 @@ pub struct DotServer {
     pub ip: std::net::IpAddr,
 }
 
-fn default_dot_port() -> u16 {
+const fn default_dot_port() -> u16 {
     DEFAULT_DOT_PORT
 }
 
@@ -163,6 +165,7 @@ impl From<StartupConfig> for RuntimeConfig {
             block_filter,
             nameservers,
             dot_servers,
+            dot_pool: dot_client::DotConnectionPool::default(),
         }
     }
 }

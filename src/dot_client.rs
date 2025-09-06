@@ -1,16 +1,19 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 use anyhow::Result;
 use rustls::pki_types::{DnsName, ServerName};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
-use tokio::sync::Mutex;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+};
 use tokio_rustls::{TlsConnector, client::TlsStream};
-use tracing::{debug, trace, warn};
+use tracing::{debug, trace};
 
-use crate::config::DotServer;
+use crate::config;
 
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
 const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
@@ -23,7 +26,10 @@ pub struct DotConnection {
 }
 
 impl DotConnection {
-    async fn new(server: &DotServer, tls_config: Arc<rustls::ClientConfig>) -> Result<Self> {
+    async fn try_new(
+        server: &config::DotServer,
+        tls_config: Arc<rustls::ClientConfig>,
+    ) -> Result<Self> {
         let addr = std::net::SocketAddr::new(server.ip, server.port);
 
         let tcp_stream =
@@ -91,11 +97,11 @@ pub struct DotConnectionPool {
     tls_config: Arc<rustls::ClientConfig>,
 }
 
-impl DotConnectionPool {
-    pub fn new() -> Self {
+impl Default for DotConnectionPool {
+    fn default() -> Self {
         // Install the default crypto provider (ring)
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        
+        _ = rustls::crypto::ring::default_provider().install_default();
+
         let mut root_store = rustls::RootCertStore::empty();
         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
@@ -108,28 +114,34 @@ impl DotConnectionPool {
             tls_config: Arc::new(tls_config),
         }
     }
+}
 
-    pub async fn get_connection(&self, server: &DotServer) -> Result<DotConnection> {
+impl DotConnectionPool {
+    pub async fn pop_connection(&self, server: &config::DotServer) -> Result<DotConnection> {
         let key = format!("{}:{}", server.hostname, server.port);
-        let mut pool = self.connections.lock().await;
+        {
+            let mut pool = self
+                .connections
+                .lock()
+                .expect("DotConnectionPool lock poisoned");
 
-        // Try to reuse an existing connection
-        if let Some(connections) = pool.get_mut(&key) {
-            // Remove expired connections
-            connections.retain(|conn| !conn.is_expired());
+            // Try to reuse an existing connection
+            if let Some(connections) = pool.get_mut(&key) {
+                // Remove expired connections
+                connections.retain(|conn| !conn.is_expired());
 
-            if let Some(conn) = connections.pop() {
-                debug!("Reusing existing DoT connection to {}", key);
-                return Ok(conn);
+                if let Some(conn) = connections.pop() {
+                    debug!("Reusing existing DoT connection to {}", key);
+                    return Ok(conn);
+                }
             }
         }
 
         // Create a new connection
-        drop(pool); // Release lock before creating connection
-        DotConnection::new(server, self.tls_config.clone()).await
+        DotConnection::try_new(server, self.tls_config.clone()).await
     }
 
-    pub async fn return_connection(&self, server: &DotServer, connection: DotConnection) {
+    pub fn push_connection(&self, server: &config::DotServer, connection: DotConnection) {
         if connection.is_expired() {
             debug!("Dropping expired DoT connection");
             return;
@@ -138,16 +150,20 @@ impl DotConnectionPool {
         let key = format!("{}:{}", server.hostname, server.port);
         self.connections
             .lock()
-            .await
+            .expect("DotConnectionPool lock poisoned")
             .entry(key.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(connection);
 
         debug!("Returned DoT connection to pool for {}", key);
     }
 
-    pub async fn cleanup_expired(&self) {
-        let mut pool = self.connections.lock().await;
+    pub fn cleanup_expired(&self) {
+        let mut pool = self
+            .connections
+            .lock()
+            .expect("DotConnectionPool lock poisoned");
+
         for (key, connections) in pool.iter_mut() {
             let before = connections.len();
             connections.retain(|conn| !conn.is_expired());
@@ -160,23 +176,20 @@ impl DotConnectionPool {
 }
 
 pub async fn query_dot_server(
-    server: &DotServer,
+    server: &config::DotServer,
     query: &[u8],
     pool: &DotConnectionPool,
 ) -> Result<Vec<u8>> {
-    let mut connection = pool.get_connection(server).await?;
+    let mut connection = pool.pop_connection(server).await?;
+    let hostname = server.hostname.as_str();
+    let port = server.port;
 
-    match connection.send_query(query).await {
-        Ok(response) => {
-            pool.return_connection(server, connection).await;
-            Ok(response)
-        }
-        Err(e) => {
-            warn!(
-                "DoT query failed for {}:{} - {}",
-                server.hostname, server.port, e
-            );
-            Err(e)
-        }
-    }
+    connection
+        .send_query(query)
+        .await
+        .map(|resp| {
+            pool.push_connection(server, connection);
+            Ok(resp)
+        })
+        .map_err(|e| anyhow::anyhow!("DoT query failed for {hostname}:{port} - {e}",))?
 }
