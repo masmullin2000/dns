@@ -1,6 +1,6 @@
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    sync::{Arc, RwLock},
+    sync::{Arc, LazyLock, Mutex, RwLock},
     time::Duration,
 };
 
@@ -15,7 +15,11 @@ use tokio::{
 };
 use tracing::{debug, error, info, trace, warn};
 
-use crate::{config::RuntimeConfig, dns_cache, dot_client};
+use crate::{
+    config::RuntimeConfig,
+    dns_cache,
+    dot_client::{self, DotPool},
+};
 
 const ADDR: &str = "0.0.0.0:53";
 const LOCAL_ADDR: &str = "127.0.0.53:53";
@@ -125,6 +129,12 @@ async fn dot_query(
     bytes: &Arc<Vec<u8>>,
     dns_start_location: usize,
 ) -> Result<Option<(String, Vec<u8>)>> {
+    const INITIAL_QUERY_TIME: Duration = Duration::from_millis(200);
+    const FALLBACK_QUERY_TIME: Duration = Duration::from_millis(5000);
+
+    static POOL: LazyLock<Arc<Mutex<DotPool>>> =
+        LazyLock::new(|| Arc::new(Mutex::new(DotPool::default())));
+
     let query = if dns_start_location > 0 {
         // For TCP, skip the length prefix
         &bytes[dns_start_location..]
@@ -133,79 +143,68 @@ async fn dot_query(
         &bytes[..]
     };
 
-    for server in config.get_dot_servers() {
+    let servers = config.get_dot_servers();
+
+    for (i, server) in servers.iter().enumerate() {
         let host = server.hostname.clone();
         let port = server.port;
 
-        let Ok(mut conn) = dot_client::DotConnection::try_new(server, &config.tls_config).await
-        else {
+        let query_time = if i == 0 {
+            // first server, use a shorter timeout
+            INITIAL_QUERY_TIME
+        } else {
+            FALLBACK_QUERY_TIME
+        };
+
+        let get_new_conn = async || {
+            dot_client::DotConnection::try_new(server, &config.tls_config)
+                .await
+                .inspect_err(|e| warn!("Failed to establish DoT connection to {host}:{port}: {e}"))
+        };
+
+        let get_conn = || POOL.lock().unwrap().get_connection(server);
+        let put_conn = |conn| POOL.lock().unwrap().return_connection(server, conn);
+
+        let value = get_conn();
+        let mut conn = if let Some(conn) = value {
+            debug!("Reusing DoT connection to {host}:{port}");
+            conn
+        } else {
+            let Ok(conn) = get_new_conn().await else {
+                continue;
+            };
+            conn
+        };
+
+        let res = timeout(query_time, conn.send_query(query)).await;
+        let Ok(res) = res else {
+            // timeout
+            debug!("DoT query to {host}:{port} timed out");
             continue;
         };
 
-        let Ok(res) = conn.send_query(query).await.inspect_err(|e| {
-            warn!("DoT query to {host}:{port} failed: {e}");
-        }) else {
-            continue;
+        let res = if let Ok(res) = res {
+            put_conn(conn);
+            res
+        } else {
+            let Ok(mut conn) = get_new_conn().await else {
+                continue;
+            };
+            let Ok(Ok(res)) = timeout(query_time, conn.send_query(query))
+                .await
+                .inspect_err(|e| {
+                    warn!("DoT query to {host}:{port} failed: {e}");
+                })
+            else {
+                continue;
+            };
+            put_conn(conn);
+            res
         };
 
         return Ok(Some((host, res)));
     }
     Ok(None)
-
-    // let dot_futures = dot_servers.iter().map(|server| {
-    //     let host = server.hostname.as_str();
-    //     let port = server.port;
-    //
-    //     debug!("Sending DNS query to DoT server {host}:{port}");
-    //
-    //     Box::pin(async move {
-    //         let query = if dns_start_location > 0 {
-    //             // For TCP, skip the length prefix
-    //             &bytes[dns_start_location..]
-    //         } else {
-    //             // For UDP, use the whole packet
-    //             &bytes[..]
-    //         };
-    //         let response_data = dot_client::query_dot_server(server, query, pool)
-    //             .await
-    //             .inspect_err(|e| {
-    //                 warn!("DoT query to {host}:{port} failed: {e}");
-    //             })?;
-    //             // .expect("REMOVE ME");
-    //
-    //         Ok::<_, anyhow::Error>((format!("{host}:{port}"), response_data))
-    //     })
-    // });
-    //
-    // let res = if let (Ok((ns, response_data)), _, remaining_futures) = select_all(dot_futures).await
-    // {
-    //     // if let Ok((server_str, response_data)) = select_all(dot_futures.clone()).await {
-    //     debug!("Received DNS response from DoT server {}", ns);
-    //     cache_dns_packet(&response_data, 0, cache, client_addr)
-    //         .inspect(|()| debug!("Received DNS response from {ns}"))
-    //         .inspect_err(|e| error!("Failed to parse DNS packet: {e}"))?;
-    //
-    //     // Add length prefix for TCP responses
-    //     let res = if dns_start_location > 0 {
-    //         let length = u16::try_from(response_data.len())
-    //             .map_err(|_| anyhow::anyhow!("Reply data too long"))?;
-    //         let mut reply = Vec::with_capacity(dns_start_location + response_data.len());
-    //         reply.extend_from_slice(&length.to_be_bytes());
-    //         reply.extend_from_slice(&response_data);
-    //         Some(reply)
-    //     } else {
-    //         Some(response_data)
-    //     };
-    //     for fut in remaining_futures {
-    //         let _ = fut.await;
-    //     }
-    //     res
-    // } else {
-    //     None
-    // };
-    //
-    // warn!("All DoT servers failed, falling back to plain DNS");
-    // Ok(res)
 }
 
 #[allow(clippy::significant_drop_tightening)]

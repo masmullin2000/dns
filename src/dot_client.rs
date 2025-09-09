@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::VecDeque, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use rustls::pki_types::{DnsName, ServerName};
@@ -13,8 +13,33 @@ use crate::config;
 
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
 
+#[derive(Default)]
+pub struct DotPool {
+    servers: std::collections::HashMap<String, VecDeque<DotConnection>>,
+}
+
+impl DotPool {
+    pub fn get_connection(&mut self, server: &config::DotServer) -> Option<DotConnection> {
+        let connections = self.servers.get_mut(&server.hostname)?;
+        while let Some(res) = connections.pop_back() {
+            if res.ts.elapsed() > Duration::from_millis(10_000) {
+                trace!("Dropping stale DoT connection to {}", server.hostname);
+                continue;
+            }
+            return Some(res);
+        }
+        None
+    }
+
+    pub fn return_connection(&mut self, server: &config::DotServer, conn: DotConnection) {
+        let connections = self.servers.entry(server.hostname.clone()).or_default();
+        connections.push_front(conn);
+    }
+}
+
 pub struct DotConnection {
     stream: TlsStream<TcpStream>,
+    ts: std::time::Instant,
 }
 
 impl DotConnection {
@@ -71,10 +96,14 @@ impl DotConnection {
             server.hostname, server.port
         );
 
-        Ok(Self { stream: tls_stream })
+        Ok(Self {
+            stream: tls_stream,
+            ts: std::time::Instant::now(),
+        })
     }
 
     pub async fn send_query(&mut self, query: &[u8]) -> Result<Vec<u8>> {
+        let now = std::time::Instant::now();
         // DNS over TLS uses TCP framing: 2-byte length prefix (big-endian)
         let len = u16::try_from(query.len()).map_err(|_| anyhow::anyhow!("DNS query too large"))?;
         let len_bytes = len.to_be_bytes();
@@ -107,7 +136,10 @@ impl DotConnection {
             .await
             .inspect_err(|e| debug!("read response failed: {e}"))?;
 
-        trace!("DoT query completed, response size: {} bytes", response_len);
+        tracing::trace!(
+            "DoT query completed, response size: {response_len} bytes: {}ms",
+            now.elapsed().as_millis()
+        );
         Ok(response)
     }
 }
