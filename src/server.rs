@@ -4,7 +4,6 @@ use std::{
     time::Duration,
 };
 
-use anyhow::Result;
 use futures::future::select_all;
 use simple_dns as dns;
 use tokio::{
@@ -42,7 +41,7 @@ impl ChannelData {
     }
 }
 
-pub fn udp_sock(addr: impl AsRef<str>) -> Result<tokio::net::UdpSocket> {
+pub fn udp_sock(addr: impl AsRef<str>) -> anyhow::Result<tokio::net::UdpSocket> {
     let sock = socket2::Socket::new(
         socket2::Domain::IPV4,
         socket2::Type::DGRAM,
@@ -128,7 +127,7 @@ async fn dot_query(
     config: &RuntimeConfig,
     bytes: &Arc<Vec<u8>>,
     dns_start_location: usize,
-) -> Result<Option<(String, Vec<u8>)>> {
+) -> anyhow::Result<Option<(String, Vec<u8>)>> {
     const INITIAL_QUERY_TIME: Duration = Duration::from_millis(200);
     const FALLBACK_QUERY_TIME: Duration = Duration::from_millis(5000);
 
@@ -144,17 +143,15 @@ async fn dot_query(
     };
 
     let servers = config.get_dot_servers();
+    let mut query_time = if servers.len() > 1 {
+        INITIAL_QUERY_TIME
+    } else {
+        FALLBACK_QUERY_TIME
+    };
 
-    for (i, server) in servers.iter().enumerate() {
+    for server in servers {
         let host = server.hostname.clone();
         let port = server.port;
-
-        let query_time = if i == 0 {
-            // first server, use a shorter timeout
-            INITIAL_QUERY_TIME
-        } else {
-            FALLBACK_QUERY_TIME
-        };
 
         let get_new_conn = async || {
             dot_client::DotConnection::try_new(server, &config.tls_config)
@@ -171,6 +168,7 @@ async fn dot_query(
             conn
         } else {
             let Ok(conn) = get_new_conn().await else {
+                query_time = FALLBACK_QUERY_TIME;
                 continue;
             };
             conn
@@ -180,6 +178,7 @@ async fn dot_query(
         let Ok(res) = res else {
             // timeout
             debug!("DoT query to {host}:{port} timed out");
+            query_time = FALLBACK_QUERY_TIME;
             continue;
         };
 
@@ -188,6 +187,7 @@ async fn dot_query(
             res
         } else {
             let Ok(mut conn) = get_new_conn().await else {
+                query_time = FALLBACK_QUERY_TIME;
                 continue;
             };
             let Ok(Ok(res)) = timeout(query_time, conn.send_query(query))
@@ -196,6 +196,7 @@ async fn dot_query(
                     warn!("DoT query to {host}:{port} failed: {e}");
                 })
             else {
+                query_time = FALLBACK_QUERY_TIME;
                 continue;
             };
             put_conn(conn);
@@ -213,8 +214,10 @@ fn cache_dns_packet(
     dns_start_location: usize,
     cache: &Arc<RwLock<dns_cache::Cache>>,
     client_addr: &SocketAddr,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     let pkt = dns::Packet::parse(&response_data[dns_start_location..])?;
+
+    tracing::trace!("Received DNS response from upstream: {pkt:?}");
 
     if let Some(question) = pkt.questions.first() {
         let qname = &question.qname;
@@ -242,6 +245,17 @@ fn cache_dns_packet(
     Ok(())
 }
 
+fn dns_fail(pkt: &dns::Packet, err: dns::RCODE) -> Vec<u8> {
+    let mut resp_pkt = pkt.clone().into_reply();
+    resp_pkt.set_flags(
+        dns::PacketFlag::RESPONSE
+            | dns::PacketFlag::RECURSION_DESIRED
+            | dns::PacketFlag::RECURSION_AVAILABLE,
+    );
+    *resp_pkt.rcode_mut() = err;
+    resp_pkt.build_bytes_vec().unwrap_or_default()
+}
+
 #[allow(clippy::too_many_lines)]
 async fn process_dns_request<F>(
     client_addr: &SocketAddr,
@@ -250,16 +264,25 @@ async fn process_dns_request<F>(
     bytes: Vec<u8>,
     dns_start_location: usize, // for TCP this should be 2, for UDP it should be 0
     get_data: F,
-) -> Result<Vec<u8>>
+) -> anyhow::Result<Vec<u8>>
 where
-    F: Clone + AsyncFn(&SocketAddr, &Arc<Vec<u8>>) -> Result<Vec<u8>>,
+    F: Clone + AsyncFn(&SocketAddr, &Arc<Vec<u8>>) -> anyhow::Result<Vec<u8>>,
 {
-    #[allow(unused_mut)]
+    if bytes.len() < dns_start_location + 12 || (dns_start_location != 2 && dns_start_location != 0)
+    {
+        anyhow::bail!("DNS packet too short");
+    }
+    let bytes = Arc::new(bytes);
+
     let Ok(mut pkt) = dns::Packet::parse(&bytes[dns_start_location..])
         .inspect_err(|e| error!("failed to parse DNS Question: {e}"))
     else {
         error!("Failed to parse DNS packet: {:?}", &bytes);
-        anyhow::bail!("Failed to parse DNS packet");
+        let id = u16::from_be_bytes([bytes[0], bytes[1]]);
+        return Ok(dns_fail(
+            &dns::Packet::new_reply(id),
+            dns::RCODE::FormatError,
+        ));
     };
 
     debug!("Received DNS request from {client_addr}: {pkt:?}");
@@ -281,37 +304,37 @@ where
 
         if !answers.is_empty() {
             pkt.answers = answers;
-            let Ok(reply_data) = pkt.build_bytes_vec() else {
-                anyhow::bail!("Failed to build custom DNS reply packet");
-            };
-            let reply = if dns_start_location > 0 {
-                let length = u16::try_from(reply_data.len())
-                    .map_err(|_| anyhow::anyhow!("Reply data too long"))?;
-                let mut reply = Vec::with_capacity(dns_start_location + reply_data.len());
-                reply.extend_from_slice(&length.to_be_bytes());
-                reply.extend_from_slice(&reply_data);
-                reply
-            } else {
-                reply_data
-            };
-            trace!("Cached DNS reply for {client_addr}");
-            return Ok(reply);
+            if let Ok(reply_data) = pkt.build_bytes_vec() {
+                let reply = if dns_start_location > 0 {
+                    u16::try_from(reply_data.len()).map_or(None, |length| {
+                        let mut reply = Vec::with_capacity(dns_start_location + reply_data.len());
+                        reply.extend_from_slice(&length.to_be_bytes());
+                        reply.extend_from_slice(&reply_data);
+                        Some(reply)
+                    })
+                } else {
+                    Some(reply_data)
+                };
+                if let Some(reply) = reply {
+                    trace!("Cached DNS reply for {client_addr}");
+                    return Ok(reply);
+                }
+            }
         }
     }
 
-    let bytes = Arc::new(bytes);
-
     // Try DoT servers first if available
-    if let Some((ns, response)) = dot_query(config, &bytes, dns_start_location).await? {
-        cache_dns_packet(&response, dns_start_location, cache, client_addr)
+    if let Ok(Some((ns, response))) = dot_query(config, &bytes, dns_start_location).await {
+        _ = cache_dns_packet(&response, dns_start_location, cache, client_addr)
             .inspect(|()| debug!("Received DNS response from DoT {ns}"))
-            .inspect_err(|e| error!("Failed to parse DNS packet: {e}"))?;
+            .inspect_err(|e| error!("Failed to parse DNS packet: {e}"));
 
         return Ok(response);
     }
 
     if config.force_dot {
-        anyhow::bail!("All DoT servers failed and force_dot is enabled");
+        return Ok(dns_fail(&pkt, dns::RCODE::ServerFailure));
+        // anyhow::bail!("All DoT servers failed and force_dot is enabled");
     }
 
     // Fallback to plain DNS
@@ -332,22 +355,25 @@ where
     });
 
     let (Ok((ns, response_data)), _, _) = select_all(futures).await else {
-        anyhow::bail!("Failed to get a response from any nameserver");
+        return Ok(dns_fail(&pkt, dns::RCODE::ServerFailure));
+        // anyhow::bail!("Failed to get a response from any nameserver");
     };
-    cache_dns_packet(&response_data, dns_start_location, cache, client_addr)
+    _ = cache_dns_packet(&response_data, dns_start_location, cache, client_addr)
         .inspect(|()| debug!("Received DNS response from {ns}"))
-        .inspect_err(|e| error!("Failed to parse DNS packet: {e}"))?;
-
+        .inspect_err(|e| error!("Failed to parse DNS packet: {e}"));
     Ok(response_data)
 }
 
-pub fn udp_server(config: Arc<RuntimeConfig>, cache: Arc<RwLock<dns_cache::Cache>>) -> Result<()> {
+pub fn udp_server(
+    config: Arc<RuntimeConfig>,
+    cache: Arc<RwLock<dns_cache::Cache>>,
+) -> anyhow::Result<()> {
     let remote_sock = Arc::new(udp_sock(ADDR)?);
     let local_sock = Arc::new(udp_sock(LOCAL_ADDR)?);
 
     let (tx, mut rx) = AsyncChannel::<ChannelData>(64);
 
-    let get_data = async |ns: &SocketAddr, bytes: &Arc<Vec<u8>>| -> Result<Vec<u8>> {
+    let get_data = async |ns: &SocketAddr, bytes: &Arc<Vec<u8>>| -> anyhow::Result<Vec<u8>> {
         let mut rec_buf = vec![0u8; MAX_PKT_SIZE];
 
         let dns_sock = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
@@ -369,15 +395,13 @@ pub fn udp_server(config: Arc<RuntimeConfig>, cache: Arc<RwLock<dns_cache::Cache
                 let sock = channel_data.sock;
 
                 if let Ok(reply_data) =
-                    process_dns_request(&addr, &config, &cache, bytes, 0, get_data)
-                        .await
-                        .inspect_err(|e| {
-                            error!("UDP Failed to process DNS request from {addr}: {e}");
-                        })
+                    process_dns_request(&addr, &config, &cache, bytes, 0, get_data).await
                 {
                     _ = sock.send_to(&reply_data, &addr).await.inspect_err(|e| {
                         error!("Failed to send DNS packet to {addr}: {e}");
                     });
+                } else {
+                    debug!("No reply data for {addr}");
                 }
             });
         }
@@ -420,7 +444,7 @@ pub async fn tcp_server(
 
     let (tx, mut rx) = AsyncChannel::<(Vec<u8>, tokio::net::TcpStream)>(1000);
 
-    let get_data = async move |ns: &SocketAddr, bytes: &Arc<Vec<u8>>| -> Result<Vec<u8>> {
+    let get_data = async move |ns: &SocketAddr, bytes: &Arc<Vec<u8>>| -> anyhow::Result<Vec<u8>> {
         let mut sock = tokio::net::TcpStream::connect(ns).await?;
 
         sock.write_all(bytes).await?;
@@ -447,9 +471,7 @@ pub async fn tcp_server(
                     get_data,
                 )
                 .await
-                .inspect_err(|e| {
-                    error!("TCP Failed to process DNS request from {peer}: {e}");
-                }) && let Err(e) = sock.write_all(&reply_data).await
+                    && let Err(e) = sock.write_all(&reply_data).await
                 {
                     error!("Failed to send DNS packet to {sock:?}: {e}");
                 }
@@ -509,14 +531,14 @@ fn dns_break(buf: &[u8]) -> Option<Vec<u8>> {
     None
 }
 
-fn dns_eof() -> Result<()> {
+fn dns_eof() -> anyhow::Result<()> {
     anyhow::bail!("EOF reached while reading DNS packet")
 }
 
 pub trait Eof {
     async fn read_until<EOF, BF>(&mut self, eof: EOF, break_on: BF) -> anyhow::Result<Vec<u8>>
     where
-        EOF: Fn() -> Result<()>,
+        EOF: Fn() -> anyhow::Result<()>,
         BF: Fn(&[u8]) -> Option<Vec<u8>>;
 
     async fn read_dns(&mut self) -> anyhow::Result<Vec<u8>>;
@@ -528,7 +550,7 @@ pub trait Eof {
 impl Eof for tokio::net::TcpStream {
     async fn read_until<EOF, BF>(&mut self, eof: EOF, break_on: BF) -> anyhow::Result<Vec<u8>>
     where
-        EOF: Fn() -> Result<()>,
+        EOF: Fn() -> anyhow::Result<()>,
         BF: Fn(&[u8]) -> Option<Vec<u8>>,
     {
         const EOF_DUR: Duration = Duration::from_millis(50);
@@ -583,9 +605,9 @@ pub async fn process_dns_request_test<F>(
     bytes: Vec<u8>,
     dns_start_location: usize, // for TCP this should be 2, for UDP it should be 0
     get_data: F,
-) -> Result<Vec<u8>>
+) -> anyhow::Result<Vec<u8>>
 where
-    F: AsyncFn(&SocketAddr, &Arc<Vec<u8>>) -> Result<Vec<u8>> + Clone,
+    F: AsyncFn(&SocketAddr, &Arc<Vec<u8>>) -> anyhow::Result<Vec<u8>> + Clone,
 {
     process_dns_request(
         client_addr,

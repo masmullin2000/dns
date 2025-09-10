@@ -410,12 +410,12 @@ async fn test_process_dns_request_upstream_forwarding_failure() {
     // Execute
     let result =
         process_dns_request_test(&client_addr, &config, &cache, query_bytes, 0, mock_get_data)
-            .await;
+            .await
+            .unwrap();
 
     // Assert
-    assert!(result.is_err());
-    let error_msg = result.unwrap_err().to_string();
-    assert!(error_msg.contains("Failed to get a response from any nameserver"));
+    let pkt = simple_dns::Packet::parse(&result).unwrap();
+    assert_eq!(pkt.rcode(), simple_dns::RCODE::ServerFailure);
 }
 
 #[tokio::test]
@@ -447,7 +447,7 @@ async fn test_process_dns_request_no_nameservers_configured() {
 async fn test_process_dns_request_malformed_packet() {
     let config: RuntimeConfig = StartupConfig::default().into();
     let cache = Arc::new(RwLock::new(dns_cache::Cache::default()));
-    let malformed_bytes = vec![1, 2, 3, 4]; // Invalid DNS packet
+    let malformed_bytes = vec![5u8; 13]; // Invalid DNS packet
     let client_addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
 
     let mock_get_data = |_ns: &SocketAddr, _bytes: &Arc<Vec<u8>>| async move {
@@ -463,12 +463,12 @@ async fn test_process_dns_request_malformed_packet() {
         0,
         mock_get_data,
     )
-    .await;
+    .await
+    .unwrap();
 
     // Assert
-    assert!(result.is_err());
-    let error_msg = result.unwrap_err().to_string();
-    assert!(error_msg.contains("Failed to parse DNS packet"));
+    let response_packet = Packet::parse(&result).unwrap();
+    assert_eq!(response_packet.rcode(), simple_dns::RCODE::FormatError);
 }
 
 #[tokio::test]
