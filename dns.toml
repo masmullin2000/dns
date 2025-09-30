@@ -1,3 +1,5 @@
+force_dot = true
+
 [local_network]
 router = "172.16.0.1"
 "tplinkwifi.net" = "172.16.1.1"
@@ -52,4 +54,16 @@ domains = ["local", "home", "lan"]
 files = ["./hagezi.list", "./oisd.list", "./steve.list", "./mine.list"]
 
 [nameservers]
+# Plain DNS servers (fallback)
 ip4 = ["1.1.1.1", "9.9.9.9"]
+
+# DNS over TLS servers (primary)
+[[nameservers.dot]]
+hostname = "cloudflare-dns.com"
+port = 853
+ip = "1.1.1.1"
+
+[[nameservers.dot]]
+hostname = "dns.quad9.net"
+port = 853
+ip = "9.9.9.9"

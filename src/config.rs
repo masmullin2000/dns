@@ -1,9 +1,12 @@
 use anyhow::Result;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
-use tracing::{debug, error};
+use std::sync::Arc;
+use tracing::{debug, error, info};
 
 use crate::block_filter::{BlockFilter, BlockFilterBuilder};
+
+const DEFAULT_DOT_PORT: u16 = 853;
 
 #[derive(Deserialize, Default, Debug)]
 pub struct StartupConfig {
@@ -14,14 +17,19 @@ pub struct StartupConfig {
     pub local_domains: Domains,
     #[serde(default = "BlockFilters::default")]
     pub blocklists: BlockFilters,
+    #[serde(default = "bool::default")]
+    pub force_dot: bool,
 }
 
-#[derive(Debug)]
+// #[derive(Debug)]
 pub struct RuntimeConfig {
     pub local_network: LocalNetwork,
     pub local_domains: Domains,
     pub block_filter: BlockFilter,
     pub nameservers: Vec<std::net::SocketAddr>,
+    pub dot_servers: Vec<DotServer>,
+    pub force_dot: bool,
+    pub tls_config: Arc<rustls::ClientConfig>,
 }
 
 #[derive(Deserialize, Default, Debug)]
@@ -37,6 +45,19 @@ pub struct BlockFilters {
 #[derive(Deserialize, Default, Debug)]
 pub struct Nameservers {
     pub ip4: HashSet<String>,
+    pub dot: Option<Vec<DotServer>>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct DotServer {
+    pub hostname: String,
+    #[serde(default = "default_dot_port")]
+    pub port: u16,
+    pub ip: std::net::IpAddr,
+}
+
+const fn default_dot_port() -> u16 {
+    DEFAULT_DOT_PORT
 }
 
 #[derive(Deserialize, Default, Clone, Debug)]
@@ -49,10 +70,13 @@ impl std::str::FromStr for StartupConfig {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        toml::from_str(s).map_err(|e| {
+        let me = toml::from_str(s).map_err(|e| {
             error!("error: {e}");
             anyhow::anyhow!("Failed to parse configuration: {e}")
-        })
+        });
+
+        info!("StartupConfig: {me:#?}");
+        me
     }
 }
 
@@ -106,6 +130,11 @@ impl RuntimeConfig {
     pub fn get_nameservers(&self) -> &[std::net::SocketAddr] {
         &self.nameservers
     }
+
+    #[must_use]
+    pub fn get_dot_servers(&self) -> &[DotServer] {
+        &self.dot_servers
+    }
 }
 
 impl From<StartupConfig> for RuntimeConfig {
@@ -134,11 +163,25 @@ impl From<StartupConfig> for RuntimeConfig {
 
         debug!("Cached {} nameservers", nameservers.len());
 
+        let dot_servers = startup.nameservers.dot.unwrap_or_default();
+        // Install the default crypto provider (ring)
+        _ = rustls::crypto::ring::default_provider().install_default();
+
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+        let tls_config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+
         Self {
             local_network: startup.local_network,
             local_domains: startup.local_domains,
             block_filter,
             nameservers,
+            dot_servers,
+            force_dot: startup.force_dot,
+            tls_config: Arc::new(tls_config),
         }
     }
 }
