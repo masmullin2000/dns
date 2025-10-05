@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Options{% endblock %}
+
+{% block content %}
+<h2>Edit Options</h2>
+
+<form method="post" action="/edit/options/save">
+    <div style="margin-bottom: 20px;">
+        <label style="display: block; margin-bottom: 5px; font-weight: bold;">
+            <input type="checkbox" name="force_dot" value="true" {% if force_dot %}checked{% endif %}>
+            Force DNS-over-TLS
+        </label>
+        <p style="margin: 5px 0 0 25px; font-size: 14px; color: #666;">
+            If enabled, fail queries when DoT servers are unavailable (don't fall back to plain DNS)
+        </p>
+    </div>
+
+    <div class="actions">
+        <button type="submit" class="btn">Save Options</button>
+        <a href="/" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+{% endblock %}

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde::Deserialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
@@ -8,7 +8,7 @@ use crate::block_filter::{BlockFilter, BlockFilterBuilder};
 
 const DEFAULT_DOT_PORT: u16 = 853;
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Deserialize, serde::Serialize, Default, Debug)]
 pub struct StartupConfig {
     pub local_network: LocalNetwork,
     #[serde(default = "Nameservers::default")]
@@ -21,7 +21,7 @@ pub struct StartupConfig {
     pub options: Options,
 }
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Deserialize, serde::Serialize, Default, Debug)]
 pub struct Options {
     #[serde(default = "bool::default")]
     pub force_dot: bool,
@@ -38,23 +38,23 @@ pub struct RuntimeConfig {
     pub tls_config: Arc<rustls::ClientConfig>,
 }
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Deserialize, serde::Serialize, Default, Debug)]
 pub struct Domains {
     pub domains: Option<Vec<String>>,
 }
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Deserialize, serde::Serialize, Default, Debug)]
 pub struct BlockFilters {
     pub files: Option<Vec<String>>,
 }
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Deserialize, serde::Serialize, Default, Debug)]
 pub struct Nameservers {
     pub ip4: HashSet<String>,
     pub dot: Option<Vec<DotServer>>,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, serde::Serialize, Clone, Debug)]
 pub struct DotServer {
     pub hostname: String,
     #[serde(default = "default_dot_port")]
@@ -66,10 +66,10 @@ const fn default_dot_port() -> u16 {
     DEFAULT_DOT_PORT
 }
 
-#[derive(Deserialize, Default, Clone, Debug)]
+#[derive(Deserialize, serde::Serialize, Default, Clone, Debug)]
 pub struct LocalNetwork {
     #[serde(flatten)]
-    pub hosts: HashMap<String, std::net::IpAddr>,
+    pub hosts: std::collections::BTreeMap<String, std::net::IpAddr>,
 }
 
 impl std::str::FromStr for StartupConfig {

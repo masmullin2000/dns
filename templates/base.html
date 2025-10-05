@@ -19,7 +19,7 @@
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1024px;
             margin: 0 auto;
             padding: 20px;
         }
@@ -30,6 +30,10 @@
             padding: 20px 0;
             margin-bottom: 30px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        header .container {
+            padding: 0 50px;
         }
 
         header h1 {
@@ -53,6 +57,8 @@
         }
 
         .content {
+            width: fit-content;
+            max-width: 900px;
             background: white;
             padding: 30px;
             border-radius: 8px;
@@ -61,7 +67,7 @@
 
         .btn {
             display: inline-block;
-            padding: 10px 20px;
+            padding: 8px 16px;
             background: #3498db;
             color: white;
             text-decoration: none;
@@ -69,6 +75,7 @@
             border-radius: 4px;
             cursor: pointer;
             font-size: 14px;
+            font-family: inherit;
             transition: background 0.2s;
         }
 
@@ -84,11 +91,16 @@
             background: #7f8c8d;
         }
 
+        /* Table cell styling */
+        .table-cell {
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
+
         textarea {
             width: 100%;
             min-height: 500px;
             font-family: 'Courier New', monospace;
-            font-size: 14px;
             padding: 15px;
             border: 1px solid #ddd;
             border-radius: 4px;
@@ -114,6 +126,96 @@
 
         .actions .btn {
             margin-right: 10px;
+        }
+
+        /* Table container and responsive wrapper */
+        .table-container {
+            width: fit-content;
+            max-width: 800px;
+            min-width: 500px;
+            margin: 0;
+        }
+
+        .responsive-table-wrapper {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* Responsive column classes */
+        .col-hostname {
+            width: 35%;
+        }
+
+        .col-ip {
+            width: 25%;
+        }
+
+        .col-action-single {
+            width: 80px;
+        }
+
+        /* Grid container styling */
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        /* Grid box styling */
+        .grid-box {
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .grid-box h4 {
+            margin-top: 0;
+        }
+
+        .grid-box p {
+            font-size: 14px;
+            color: #666;
+        }
+
+        @media (max-width: 768px) {
+            header {
+                margin-bottom: 0;
+            }
+            header .container {
+                padding: 0 10px;
+            }
+            .container {
+                padding: 0 0px;
+            }
+            .content {
+                padding: 0 10px;
+                width: 100% !important;
+                max-width: 100% !important;
+                min-width: 0 !important;
+            }
+            .table-container {
+                width: 100% !important;
+                max-width: 100% !important;
+                min-width: 0 !important;
+                padding: 0 0px;
+            }
+            .responsive-table-wrapper {
+                max-width: 100%;
+            }
+        }
+
+        @media (max-width: 480px) {
+            /* Small adjustments for very small phones */
+            .col-hostname {
+                width: 33% !important;
+            }
+            .col-ip {
+                width: 27% !important;
+            }
+            .col-action-single {
+                width: 68px !important;
+            }
         }
     </style>
 </head>

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Nameservers{% endblock %}
+
+{% block content %}
+<h2>Edit Plain DNS Nameservers</h2>
+
+<p style="margin-bottom: 15px; color: #666;">
+    Define fallback plain DNS servers (used when DoT is unavailable or force_dot is disabled). Enter one IP address per line.
+</p>
+
+<form method="post" action="/edit/nameservers/save">
+    <textarea name="content" style="min-height: 300px; font-family: monospace;" required>{{ content }}</textarea>
+
+    <div class="actions">
+        <button type="submit" class="btn">Save Nameservers</button>
+        <a href="/" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+
+<div style="margin-top: 20px; padding: 15px; background: #e8f4f8; border-left: 4px solid #3498db; border-radius: 4px;">
+    <strong>Example:</strong>
+    <pre style="margin-top: 10px; background: white; padding: 10px; border-radius: 4px;"><code>1.1.1.1
+9.9.9.9
+8.8.8.8</code></pre>
+    <p style="margin-top: 10px; font-size: 14px;">
+        These are standard DNS servers without encryption (port 53).
+    </p>
+</div>
+{% endblock %}

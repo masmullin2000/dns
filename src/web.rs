@@ -1,3 +1,5 @@
+#![allow(clippy::cognitive_complexity)]
+
 use axum::{
     Router,
     routing::{get, post},
@@ -58,6 +60,26 @@ async fn main() -> anyhow::Result<()> {
         .route("/config", get(web_ui::view_config))
         .route("/config/edit", get(web_ui::edit_config))
         .route("/config/save", post(web_ui::save_config))
+        .route("/edit/options", get(web_ui::edit_options))
+        .route("/edit/options/save", post(web_ui::save_options))
+        .route("/edit/local_network", get(web_ui::edit_local_network))
+        .route("/edit/local_network/save", post(web_ui::save_local_network))
+        .route(
+            "/edit/local_network/update",
+            post(web_ui::update_local_network),
+        )
+        .route(
+            "/edit/local_network/delete",
+            post(web_ui::delete_local_network),
+        )
+        .route("/edit/local_domains", get(web_ui::edit_local_domains))
+        .route("/edit/local_domains/save", post(web_ui::save_local_domains))
+        .route("/edit/blocklists", get(web_ui::edit_blocklists))
+        .route("/edit/blocklists/save", post(web_ui::save_blocklists))
+        .route("/edit/nameservers", get(web_ui::edit_nameservers))
+        .route("/edit/nameservers/save", post(web_ui::save_nameservers))
+        .route("/edit/dot", get(web_ui::edit_dot))
+        .route("/edit/dot/save", post(web_ui::save_dot))
         .with_state(app_state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], args.port));

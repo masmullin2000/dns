@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Local Network{% endblock %}
+
+{% block content %}
+<div class="table-container">
+    <h2>Edit Local Network</h2>
+
+    <p style="margin-bottom: 15px; color: #666;">
+        Define hostname to IP address mappings for your local network.
+    </p>
+
+    <h3>Add New Entry</h3>
+    <form method="post" action="/edit/local_network/save">
+        <div class="responsive-table-wrapper">
+        <table style="width: 100%; min-width: 500px; border-collapse: collapse; margin-bottom: 20px; table-layout: fixed;">
+        <colgroup>
+            <col class="col-hostname" style="width: 35%;">
+            <col class="col-ip" style="width: 25%;">
+            <col class="col-action-single" style="width: 80px;">
+            <col class="col-action-single" style="width: 80px;">
+        </colgroup>
+        <thead>
+            <tr style="background: #f5f5f5;">
+                <th class="table-cell" style="text-align: left;">Hostname</th>
+                <th class="table-cell" style="text-align: left;">IP Address</th>
+                <th colspan="2" class="table-cell" style="text-align: center;">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="table-cell">
+                    <input type="text" name="hostname" placeholder="Enter hostname" required style="width: 100%; padding: 5px; border: none; outline: none;">
+                </td>
+                <td class="table-cell">
+                    <input type="text" name="ip" placeholder="Enter IP address" required style="width: 100%; padding: 5px; border: none; outline: none;">
+                </td>
+                <td colspan="2" class="table-cell" style="text-align: center;">
+                    <button type="submit" class="btn">Add</button>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+        </div>
+    </form>
+
+    <h3>Current Entries</h3>
+    {% if entries.len() > 0 %}
+    <form method="post" action="/edit/local_network/update" id="update-form">
+        <input type="hidden" name="old_hostname" id="update-old-hostname">
+        <input type="hidden" name="new_hostname" id="update-new-hostname">
+        <input type="hidden" name="new_ip" id="update-new-ip">
+    </form>
+    <form method="post" action="/edit/local_network/delete" id="delete-form">
+        <div class="responsive-table-wrapper">
+        <table id="entries-table" style="width: 100%; min-width: 500px; border-collapse: collapse; margin-bottom: 20px; table-layout: fixed;">
+        <thead>
+            <tr style="background: #f5f5f5;">
+                <th class="col-hostname table-cell" onclick="sortTable('hostname')" style="text-align: left; cursor: pointer; user-select: none; width: 35%;">
+                    Hostname <span id="sort-hostname" style="color: #666;">▲▼</span>
+                </th>
+                <th class="col-ip table-cell" onclick="sortTable('ip')" style="text-align: left; cursor: pointer; user-select: none; width: 25%;">
+                    IP Address <span id="sort-ip" style="color: #666;">▲▼</span>
+                </th>
+                <th class="col-action-single table-cell" style="text-align: center; width: 80px;">Edit</th>
+                <th class="col-action-single table-cell" style="text-align: center; width: 80px;">Remove</th>
+            </tr>
+        </thead>
+        <tbody id="entries-tbody">
+            {% for entry in entries %}
+            <tr id="row-{{ entry.hostname }}">
+                <td class="col-hostname table-cell" data-hostname="{{ entry.hostname }}">
+                    <span class="display-value">{{ entry.hostname }}</span>
+                    <input type="text" class="edit-input" value="{{ entry.hostname }}" style="display: none; width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                </td>
+                <td class="col-ip table-cell" data-ip="{{ entry.ip }}">
+                    <span class="display-value">{{ entry.ip }}</span>
+                    <input type="text" class="edit-input" value="{{ entry.ip }}" style="display: none; width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                </td>
+                <td class="col-action-single table-cell" style="text-align: center;">
+                    <button type="button" class="btn edit-save-btn" onclick="toggleEdit(this, '{{ entry.hostname }}')">Edit</button>
+                </td>
+                <td class="col-action-single table-cell" style="text-align: center;">
+                    <button type="submit" name="remove_hostname" value="{{ entry.hostname }}" class="btn btn-secondary remove-btn" onclick="return confirm('Remove {{ entry.hostname }}?');">Remove</button>
+                    <button type="button" class="btn btn-secondary cancel-btn" onclick="cancelEdit(this)" style="display: none;">Cancel</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+        </div>
+    </form>
+    {% else %}
+    <p style="color: #666; margin-bottom: 30px;">No entries configured yet.</p>
+    {% endif %}
+
+<div style="margin-top: 20px; padding: 15px; background: #e8f4f8; border-left: 4px solid #3498db; border-radius: 4px;">
+    <strong>Tips:</strong>
+    <ul style="margin-top: 10px; margin-left: 20px;">
+        <li>Hostname can be any valid DNS name (e.g., <code>router</code>, <code>nas</code>, <code>workstation</code>)</li>
+        <li>IP Address must be a valid IPv4 or IPv6 address</li>
+        <li>Use the "Add Entry" button to create new mappings</li>
+        <li>Use "Remove" to delete unwanted entries</li>
+    </ul>
+</div>
+</div>
+
+<script>
+let sortState = {
+    column: null,
+    ascending: true
+};
+
+function toggleEdit(button, oldHostname) {
+    const row = button.closest('tr');
+    const displayValues = row.querySelectorAll('.display-value');
+    const editInputs = row.querySelectorAll('.edit-input');
+    const removeBtn = row.querySelector('.remove-btn');
+    const cancelBtn = row.querySelector('.cancel-btn');
+    const isEditing = button.textContent === 'Save';
+
+    if (isEditing) {
+        // Save mode - submit the form
+        const newHostname = editInputs[0].value.trim();
+        const newIp = editInputs[1].value.trim();
+
+        if (!newHostname || !newIp) {
+            alert('Hostname and IP address cannot be empty');
+            return;
+        }
+
+        // Populate hidden form fields
+        document.getElementById('update-old-hostname').value = oldHostname;
+        document.getElementById('update-new-hostname').value = newHostname;
+        document.getElementById('update-new-ip').value = newIp;
+
+        // Submit the update form
+        document.getElementById('update-form').submit();
+    } else {
+        // Edit mode - show inputs, hide displays
+        displayValues.forEach((span, index) => {
+            span.style.display = 'none';
+            editInputs[index].style.display = 'block';
+        });
+
+        // Change Edit button to Save
+        button.textContent = 'Save';
+
+        // Toggle Remove/Cancel buttons
+        removeBtn.style.display = 'none';
+        cancelBtn.style.display = 'inline-block';
+    }
+}
+
+function cancelEdit(button) {
+    const row = button.closest('tr');
+    const displayValues = row.querySelectorAll('.display-value');
+    const editInputs = row.querySelectorAll('.edit-input');
+    const editSaveBtn = row.querySelector('.edit-save-btn');
+    const removeBtn = row.querySelector('.remove-btn');
+    const cancelBtn = row.querySelector('.cancel-btn');
+
+    // Reset to original values
+    const originalHostname = row.querySelector('[data-hostname]').getAttribute('data-hostname');
+    const originalIp = row.querySelector('[data-ip]').getAttribute('data-ip');
+
+    editInputs[0].value = originalHostname;
+    editInputs[1].value = originalIp;
+
+    // Hide inputs, show displays
+    displayValues.forEach(span => span.style.display = 'inline');
+    editInputs.forEach(input => input.style.display = 'none');
+
+    // Change Save button back to Edit
+    editSaveBtn.textContent = 'Edit';
+
+    // Toggle Cancel/Remove buttons
+    cancelBtn.style.display = 'none';
+    removeBtn.style.display = 'inline-block';
+}
+
+function sortTable(sortBy) {
+    const tbody = document.getElementById('entries-tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    // Toggle sort direction if clicking the same column
+    if (sortState.column === sortBy) {
+        sortState.ascending = !sortState.ascending;
+    } else {
+        sortState.column = sortBy;
+        sortState.ascending = true;
+    }
+
+    rows.sort((a, b) => {
+        let aValue, bValue;
+
+        if (sortBy === 'hostname') {
+            aValue = a.querySelector('[data-hostname]').getAttribute('data-hostname').toLowerCase();
+            bValue = b.querySelector('[data-hostname]').getAttribute('data-hostname').toLowerCase();
+
+            const result = aValue.localeCompare(bValue);
+            return sortState.ascending ? result : -result;
+        } else if (sortBy === 'ip') {
+            aValue = a.querySelector('[data-ip]').getAttribute('data-ip');
+            bValue = b.querySelector('[data-ip]').getAttribute('data-ip');
+
+            // Convert IPs to comparable format
+            const ipToNum = (ip) => {
+                const parts = ip.split('.');
+                if (parts.length === 4) {
+                    // IPv4
+                    return parts.reduce((acc, part) => acc * 256 + parseInt(part), 0);
+                } else {
+                    // IPv6 or other - use string comparison
+                    return ip;
+                }
+            };
+
+            const aNum = ipToNum(aValue);
+            const bNum = ipToNum(bValue);
+
+            let result;
+            if (typeof aNum === 'number' && typeof bNum === 'number') {
+                result = aNum - bNum;
+            } else {
+                result = String(aNum).localeCompare(String(bNum));
+            }
+            return sortState.ascending ? result : -result;
+        }
+        return 0;
+    });
+
+    // Re-append rows in sorted order
+    rows.forEach(row => tbody.appendChild(row));
+
+    // Update sort indicators
+    document.getElementById('sort-hostname').innerHTML = '▲▼';
+    document.getElementById('sort-ip').innerHTML = '▲▼';
+    document.getElementById('sort-hostname').style.color = '#666';
+    document.getElementById('sort-ip').style.color = '#666';
+
+    const activeIndicator = document.getElementById('sort-' + sortBy);
+    activeIndicator.innerHTML = sortState.ascending ? '▲' : '▼';
+    activeIndicator.style.color = '#3498db';
+}
+</script>
+{% endblock %}

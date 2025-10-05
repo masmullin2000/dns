@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}Edit DNS-over-TLS{% endblock %}
+
+{% block content %}
+<h2>Edit DNS-over-TLS Servers</h2>
+
+<p style="margin-bottom: 15px; color: #666;">
+    Configure DNS-over-TLS (DoT) servers for encrypted DNS queries. Each server requires a hostname, IP address, and port.
+</p>
+
+<form method="post" action="/edit/dot/save">
+    <div id="dot-servers">
+        {% for server in servers %}
+        <div class="dot-server" style="padding: 15px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
+            <div style="margin-bottom: 10px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Hostname:</label>
+                <input type="text" name="hostname[]" value="{{ server.hostname }}" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            <div style="margin-bottom: 10px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">IP Address:</label>
+                <input type="text" name="ip[]" value="{{ server.ip }}" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            <div style="margin-bottom: 10px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Port:</label>
+                <input type="number" name="port[]" value="{{ server.port }}" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            <button type="button" class="btn btn-secondary" onclick="this.parentElement.remove()">Remove Server</button>
+        </div>
+        {% endfor %}
+    </div>
+
+    <button type="button" class="btn btn-secondary" onclick="addDotServer()" style="margin-bottom: 20px;">Add DoT Server</button>
+
+    <div class="actions">
+        <button type="submit" class="btn">Save DoT Configuration</button>
+        <a href="/" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+
+<div style="margin-top: 20px; padding: 15px; background: #e8f4f8; border-left: 4px solid #3498db; border-radius: 4px;">
+    <strong>Example:</strong>
+    <ul style="margin-top: 10px; margin-left: 20px;">
+        <li>Cloudflare: hostname=<code>cloudflare-dns.com</code>, ip=<code>1.1.1.1</code>, port=<code>853</code></li>
+        <li>Quad9: hostname=<code>dns.quad9.net</code>, ip=<code>9.9.9.9</code>, port=<code>853</code></li>
+    </ul>
+</div>
+
+<script>
+function addDotServer() {
+    const container = document.getElementById('dot-servers');
+    const serverDiv = document.createElement('div');
+    serverDiv.className = 'dot-server';
+    serverDiv.style = 'padding: 15px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;';
+    serverDiv.innerHTML = `
+        <div style="margin-bottom: 10px;">
+            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Hostname:</label>
+            <input type="text" name="hostname[]" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+        </div>
+        <div style="margin-bottom: 10px;">
+            <label style="display: block; margin-bottom: 5px; font-weight: bold;">IP Address:</label>
+            <input type="text" name="ip[]" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+        </div>
+        <div style="margin-bottom: 10px;">
+            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Port:</label>
+            <input type="number" name="port[]" value="853" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+        </div>
+        <button type="button" class="btn btn-secondary" onclick="this.parentElement.remove()">Remove Server</button>
+    `;
+    container.appendChild(serverDiv);
+}
+</script>
+{% endblock %}

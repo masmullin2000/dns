@@ -1,0 +1,70 @@
+[options]
+force_dot = true
+
+[local_network]
+router = "172.16.0.1"
+"tplinkwifi.net" = "172.16.1.1"
+dns = "172.16.0.2"
+xdns = "172.16.0.254"
+jup = "172.16.0.3"
+nas = "172.16.50.3"
+jelly = "172.16.50.105"
+torrent = "172.16.50.106"
+work = "172.16.1.3"
+game = "172.16.250.5"
+store = "172.16.250.3"
+x13s = "172.16.100.100"
+prox = "172.16.50.1"
+fd = "172.16.1.150"
+deb11 = "172.16.1.10"
+deb12 = "172.16.1.11"
+ol8 = "172.16.1.40"
+ol9 = "172.16.1.41"
+ol7 = "172.16.1.42"
+ol9sec = "172.16.1.43"
+ol86 = "172.16.1.44"
+ol87 = "172.16.1.45"
+rhel8 = "172.16.1.50"
+rhel9 = "172.16.1.51"
+cent10 = "172.16.1.52"
+rocky8 = "172.16.1.53"
+alma9 = "172.16.1.54"
+rhel86 = "172.16.1.55"
+rhel84 = "172.16.1.56"
+am2 = "172.16.1.60"
+al = "172.16.1.62"
+az = "172.16.1.61"
+ub22 = "172.16.1.70"
+ub24 = "172.16.1.71"
+os154 = "172.16.1.82"
+os155 = "172.16.1.80"
+os156 = "172.16.1.81"
+os16 = "172.16.1.83"
+sles7 = "172.16.1.93"
+sles6 = "172.16.1.90"
+sles5 = "172.16.1.91"
+sles4 = "172.16.1.92"
+w11_home = "172.16.50.3"
+w10_work = "172.16.50.4"
+vms = "172.16.5.3"
+
+[local_domains]
+domains = ["local", "home", "lan"]
+
+[blocklists]
+files = ["./hagezi.list", "./oisd.list", "./steve.list", "./mine.list"]
+
+[nameservers]
+# Plain DNS servers (fallback)
+ip4 = ["1.1.1.1", "9.9.9.9"]
+
+# DNS over TLS servers (primary)
+[[nameservers.dot]]
+hostname = "cloudflare-dns.com"
+port = 853
+ip = "1.1.1.1"
+
+[[nameservers.dot]]
+hostname = "dns.quad9.net"
+port = 853
+ip = "9.9.9.9"
