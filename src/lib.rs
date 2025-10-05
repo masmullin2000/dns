@@ -12,6 +12,7 @@ use config::{RuntimeConfig, StartupConfig};
 use server::{tcp_server, udp_server};
 use tracing::{error, info};
 
+#[allow(clippy::cognitive_complexity)]
 pub async fn run(cfg_str: impl AsRef<str>) -> anyhow::Result<()> {
     let cfg_str = cfg_str.as_ref();
     let config: StartupConfig = std::fs::read_to_string(cfg_str)?.parse()?;

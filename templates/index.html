@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h2>Welcome to DNS Configuration Manager</h2>
+
+<p>This web interface allows you to manage your DNS server configuration (dns.toml).</p>
+
+<h3>Quick Links</h3>
+<ul style="list-style: none; padding: 20px 0;">
+    <li style="margin: 10px 0;"><a href="/config" class="btn">View Current Configuration</a></li>
+    <li style="margin: 10px 0;"><a href="/config/edit" class="btn">Edit Configuration</a></li>
+</ul>
+
+<h3>About</h3>
+<p>Use this interface to:</p>
+<ul style="margin-left: 20px; margin-top: 10px;">
+    <li>View the current DNS configuration</li>
+    <li>Edit local network mappings</li>
+    <li>Configure DNS-over-TLS servers</li>
+    <li>Manage blocklists</li>
+    <li>Update nameserver settings</li>
+</ul>
+
+<p style="margin-top: 20px; color: #666; font-size: 14px;">
+    <strong>Note:</strong> After saving configuration changes, you'll need to restart the DNS server for changes to take effect.
+</p>
+{% endblock %}

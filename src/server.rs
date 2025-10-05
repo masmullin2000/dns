@@ -68,6 +68,7 @@ trait DnsAnswers {
 }
 
 impl DnsAnswers for dns::Question<'_> {
+    #[allow(clippy::cognitive_complexity)]
     fn check(
         &self,
         config: &RuntimeConfig,
@@ -208,7 +209,7 @@ async fn dot_query(
     Ok(None)
 }
 
-#[allow(clippy::significant_drop_tightening)]
+#[allow(clippy::significant_drop_tightening, clippy::cognitive_complexity)]
 fn cache_dns_packet(
     response_data: &[u8],
     dns_start_location: usize,
@@ -256,7 +257,7 @@ fn dns_fail(pkt: &dns::Packet, err: dns::RCODE) -> Vec<u8> {
     resp_pkt.build_bytes_vec().unwrap_or_default()
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
 async fn process_dns_request<F>(
     client_addr: &SocketAddr,
     config: &RuntimeConfig,

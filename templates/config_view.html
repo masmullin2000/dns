@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}View Configuration{% endblock %}
+
+{% block content %}
+<h2>Current DNS Configuration</h2>
+
+<pre><code>{{ config_content }}</code></pre>
+
+<div class="actions">
+    <a href="/config/edit" class="btn">Edit Configuration</a>
+    <a href="/" class="btn btn-secondary">Back to Home</a>
+</div>
+{% endblock %}

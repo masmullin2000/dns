@@ -21,7 +21,11 @@ tokio = { version = "1", features = [
     "time",
 ] }
 tokio-rustls = "0.26"
-rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "ring"] }
+rustls = { version = "0.23", default-features = false, features = [
+    "std",
+    "tls12",
+    "ring",
+] }
 rustls-pki-types = "1"
 webpki-roots = "1"
 serde = { version = "1", features = ["derive"] }
@@ -29,6 +33,10 @@ toml = { version = "0.9", features = ["preserve_order"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-journald = "0.3"
+axum = "0.8"
+askama = { version = "0.14" }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs"] }
 
 [dev-dependencies]
 criterion = { version = "0.7", features = ["async_tokio"] }
@@ -50,6 +58,10 @@ path = "src/lib.rs"
 [[bin]]
 name = "dns"
 path = "src/main.rs"
+
+[[bin]]
+name = "dns-web"
+path = "src/web.rs"
 
 [features]
 default = []
