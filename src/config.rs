@@ -17,6 +17,12 @@ pub struct StartupConfig {
     pub local_domains: Domains,
     #[serde(default = "BlockFilters::default")]
     pub blocklists: BlockFilters,
+    #[serde(default = "Options::default")]
+    pub options: Options,
+}
+
+#[derive(Deserialize, Default, Debug)]
+pub struct Options {
     #[serde(default = "bool::default")]
     pub force_dot: bool,
 }
@@ -180,7 +186,7 @@ impl From<StartupConfig> for RuntimeConfig {
             block_filter,
             nameservers,
             dot_servers,
-            force_dot: startup.force_dot,
+            force_dot: startup.options.force_dot,
             tls_config: Arc::new(tls_config),
         }
     }
