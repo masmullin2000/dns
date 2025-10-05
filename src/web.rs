@@ -1,15 +1,16 @@
 #![allow(clippy::cognitive_complexity)]
 
+mod web_ui;
+
+use std::net::SocketAddr;
+
 use axum::{
     Router,
     routing::{get, post},
 };
 use clap::Parser;
-use std::net::SocketAddr;
 use tracing::{Level, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-mod web_ui;
 
 #[derive(Parser)]
 struct Args {
