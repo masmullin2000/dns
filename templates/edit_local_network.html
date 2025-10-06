@@ -11,31 +11,31 @@
     </p>
 
     <h3>Add New Entry</h3>
-    <form method="post" action="/edit/local_network/save">
-        <div class="responsive-table-wrapper">
+    <form id="add-entry-form" hx-post="/edit/local_network/save" hx-target="#table-container" hx-swap="innerHTML">
+        <div class="responsive-table-wrapper table-container">
         <table style="width: 100%; min-width: 500px; border-collapse: collapse; margin-bottom: 20px; table-layout: fixed;">
         <colgroup>
-            <col class="col-hostname" style="width: 35%;">
-            <col class="col-ip" style="width: 25%;">
-            <col class="col-action-single" style="width: 80px;">
-            <col class="col-action-single" style="width: 80px;">
+            <col class="col-hostname">
+            <col class="col-ip">
+            <col class="col-action-single">
+            <col class="col-action-single">
         </colgroup>
         <thead>
             <tr style="background: #f5f5f5;">
-                <th class="table-cell" style="text-align: left;">Hostname</th>
-                <th class="table-cell" style="text-align: left;">IP Address</th>
-                <th colspan="2" class="table-cell" style="text-align: center;">Action</th>
+                <th class="col-hostname table-cell" style="text-align: left;">Hostname</th>
+                <th class="col-ip table-cell" style="text-align: left;">IP Address</th>
+                <th colspan="2" class="col-action-single table-cell" style="text-align: center;">Action</th>
             </tr>
         </thead>
         <tbody>
             <tr>
-                <td class="table-cell">
-                    <input type="text" name="hostname" placeholder="Enter hostname" required style="width: 100%; padding: 5px; border: none; outline: none;">
+                <td class="col-hostname table-cell">
+                    <input type="text" name="hostname" placeholder="Enter hostname" required style="width: 85%; border: none; outline: none;">
                 </td>
-                <td class="table-cell">
-                    <input type="text" name="ip" placeholder="Enter IP address" required style="width: 100%; padding: 5px; border: none; outline: none;">
+                <td class="col-ip table-cell">
+                    <input type="text" name="ip" placeholder="Enter IP address" required style="width: 85%; border: none; outline: none;">
                 </td>
-                <td colspan="2" class="table-cell" style="text-align: center;">
+                <td colspan="2" class="col-action-single table-cell" style="text-align: center;">
                     <button type="submit" class="btn">Add</button>
                 </td>
             </tr>
@@ -45,54 +45,9 @@
     </form>
 
     <h3>Current Entries</h3>
-    {% if entries.len() > 0 %}
-    <form method="post" action="/edit/local_network/update" id="update-form">
-        <input type="hidden" name="old_hostname" id="update-old-hostname">
-        <input type="hidden" name="new_hostname" id="update-new-hostname">
-        <input type="hidden" name="new_ip" id="update-new-ip">
-    </form>
-    <form method="post" action="/edit/local_network/delete" id="delete-form">
-        <div class="responsive-table-wrapper">
-        <table id="entries-table" style="width: 100%; min-width: 500px; border-collapse: collapse; margin-bottom: 20px; table-layout: fixed;">
-        <thead>
-            <tr style="background: #f5f5f5;">
-                <th class="col-hostname table-cell" onclick="sortTable('hostname')" style="text-align: left; cursor: pointer; user-select: none; width: 35%;">
-                    Hostname <span id="sort-hostname" style="color: #666;">▲▼</span>
-                </th>
-                <th class="col-ip table-cell" onclick="sortTable('ip')" style="text-align: left; cursor: pointer; user-select: none; width: 25%;">
-                    IP Address <span id="sort-ip" style="color: #666;">▲▼</span>
-                </th>
-                <th class="col-action-single table-cell" style="text-align: center; width: 80px;">Edit</th>
-                <th class="col-action-single table-cell" style="text-align: center; width: 80px;">Remove</th>
-            </tr>
-        </thead>
-        <tbody id="entries-tbody">
-            {% for entry in entries %}
-            <tr id="row-{{ entry.hostname }}">
-                <td class="col-hostname table-cell" data-hostname="{{ entry.hostname }}">
-                    <span class="display-value">{{ entry.hostname }}</span>
-                    <input type="text" class="edit-input" value="{{ entry.hostname }}" style="display: none; width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
-                </td>
-                <td class="col-ip table-cell" data-ip="{{ entry.ip }}">
-                    <span class="display-value">{{ entry.ip }}</span>
-                    <input type="text" class="edit-input" value="{{ entry.ip }}" style="display: none; width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
-                </td>
-                <td class="col-action-single table-cell" style="text-align: center;">
-                    <button type="button" class="btn edit-save-btn" onclick="toggleEdit(this, '{{ entry.hostname }}')">Edit</button>
-                </td>
-                <td class="col-action-single table-cell" style="text-align: center;">
-                    <button type="submit" name="remove_hostname" value="{{ entry.hostname }}" class="btn btn-secondary remove-btn" onclick="return confirm('Remove {{ entry.hostname }}?');">Remove</button>
-                    <button type="button" class="btn btn-secondary cancel-btn" onclick="cancelEdit(this)" style="display: none;">Cancel</button>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-        </div>
-    </form>
-    {% else %}
-    <p style="color: #666; margin-bottom: 30px;">No entries configured yet.</p>
-    {% endif %}
+    <div id="table-container">
+        {% include "local_network_table.html" %}
+    </div>
 
 <div style="margin-top: 20px; padding: 15px; background: #e8f4f8; border-left: 4px solid #3498db; border-radius: 4px;">
     <strong>Tips:</strong>
@@ -106,6 +61,19 @@
 </div>
 
 <script>
+// Ensure script runs after DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+    // Listen for HTMX after swap to reset the form
+    document.body.addEventListener('htmx:afterSwap', function(event) {
+        if (event.detail.target.id === 'table-container') {
+            const form = document.getElementById('add-entry-form');
+            if (form) {
+                form.reset();
+            }
+        }
+    });
+});
+
 let sortState = {
     column: null,
     ascending: true
@@ -120,7 +88,7 @@ function toggleEdit(button, oldHostname) {
     const isEditing = button.textContent === 'Save';
 
     if (isEditing) {
-        // Save mode - submit the form
+        // Save mode - submit via HTMX
         const newHostname = editInputs[0].value.trim();
         const newIp = editInputs[1].value.trim();
 
@@ -129,13 +97,16 @@ function toggleEdit(button, oldHostname) {
             return;
         }
 
-        // Populate hidden form fields
-        document.getElementById('update-old-hostname').value = oldHostname;
-        document.getElementById('update-new-hostname').value = newHostname;
-        document.getElementById('update-new-ip').value = newIp;
-
-        // Submit the update form
-        document.getElementById('update-form').submit();
+        // Use HTMX to submit the update
+        htmx.ajax('POST', '/edit/local_network/update', {
+            target: '#table-container',
+            swap: 'innerHTML',
+            values: {
+                old_hostname: oldHostname,
+                new_hostname: newHostname,
+                new_ip: newIp
+            }
+        });
     } else {
         // Edit mode - show inputs, hide displays
         displayValues.forEach((span, index) => {
@@ -181,6 +152,8 @@ function cancelEdit(button) {
 
 function sortTable(sortBy) {
     const tbody = document.getElementById('entries-tbody');
+    if (!tbody) return; // Guard against missing element
+
     const rows = Array.from(tbody.querySelectorAll('tr'));
 
     // Toggle sort direction if clicking the same column
@@ -234,14 +207,20 @@ function sortTable(sortBy) {
     rows.forEach(row => tbody.appendChild(row));
 
     // Update sort indicators
-    document.getElementById('sort-hostname').innerHTML = '▲▼';
-    document.getElementById('sort-ip').innerHTML = '▲▼';
-    document.getElementById('sort-hostname').style.color = '#666';
-    document.getElementById('sort-ip').style.color = '#666';
+    const sortHostname = document.getElementById('sort-hostname');
+    const sortIp = document.getElementById('sort-ip');
+    if (sortHostname && sortIp) {
+        sortHostname.innerHTML = '▲▼';
+        sortIp.innerHTML = '▲▼';
+        sortHostname.style.color = '#666';
+        sortIp.style.color = '#666';
 
-    const activeIndicator = document.getElementById('sort-' + sortBy);
-    activeIndicator.innerHTML = sortState.ascending ? '▲' : '▼';
-    activeIndicator.style.color = '#3498db';
+        const activeIndicator = document.getElementById('sort-' + sortBy);
+        if (activeIndicator) {
+            activeIndicator.innerHTML = sortState.ascending ? '▲' : '▼';
+            activeIndicator.style.color = '#3498db';
+        }
+    }
 }
 </script>
 {% endblock %}
