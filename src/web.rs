@@ -9,6 +9,7 @@ use axum::{
     routing::{get, post},
 };
 use clap::Parser;
+use tower_http::services::ServeDir;
 use tracing::{Level, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -81,6 +82,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/edit/nameservers/save", post(web_ui::save_nameservers))
         .route("/edit/dot", get(web_ui::edit_dot))
         .route("/edit/dot/save", post(web_ui::save_dot))
+        .nest_service("/static", ServeDir::new("static"))
         .with_state(app_state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], args.port));
