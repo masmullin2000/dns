@@ -100,26 +100,29 @@
             background: var(--color-bg-header);
             width: 100%;
             max-width: 900px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 20px;
         }
 
         [data-theme="dark"] header .header-left {
             background: var(--color-bg-header-left);
         }
 
+        header .header-table {
+            width: 100%;
+            display: table;
+        }
+
         header .header-content {
-            padding: 0 30px;
-            flex: 1;
+            display: table-cell;
+            vertical-align: middle;
+            padding: 15px 0 15px 30px;
         }
 
         .theme-toggle-wrapper {
-            flex-shrink: 0;
-            align-self: flex-start;
-            padding: 30px;
+            display: table-cell;
+            vertical-align: middle;
+            padding: 15px 30px;
+            text-align: right;
+            white-space: nowrap;
         }
 
         header h1 {
@@ -129,6 +132,15 @@
 
         [data-theme="dark"] header h1 {
             color: var(--color-text-primary);
+        }
+
+        header h1 a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        header h1 a:hover {
+            opacity: 0.8;
         }
 
         nav {
@@ -420,14 +432,18 @@
                 padding: 0 10px;
             }
             header .header-left {
-                flex-direction: column;
-                align-items: flex-start;
                 width: 100% !important;
                 max-width: 100% !important;
             }
+            header .header-content {
+                padding: 15px 0 15px 10px;
+            }
+            .theme-toggle-wrapper {
+                padding: 15px 10px;
+            }
             .theme-toggle {
-                margin-top: 10px;
-                align-self: flex-end;
+                white-space: pre-line;
+                line-height: 1.2;
             }
             .container {
                 padding: 20px 0;
@@ -481,9 +497,18 @@
                 const currentTheme = document.documentElement.getAttribute('data-theme');
                 const button = document.getElementById('theme-toggle');
                 if (button) {
-                    button.textContent = currentTheme === 'dark' ? '☀️ Light Mode' : '🌙 Dark Mode';
+                    // Check if mobile view (768px or less)
+                    const isMobile = window.innerWidth <= 768;
+                    if (isMobile) {
+                        button.textContent = currentTheme === 'dark' ? '☀️\nLight\nMode' : '🌙\nDark\nMode';
+                    } else {
+                        button.textContent = currentTheme === 'dark' ? '☀️ Light Mode' : '🌙 Dark Mode';
+                    }
                 }
             }
+
+            // Update button on window resize
+            window.addEventListener('resize', updateThemeButton);
 
             // Toggle theme function
             window.toggleTheme = function() {
@@ -504,16 +529,21 @@
     <div class="main-container">
         <header>
             <div class="header-left">
-                <div class="header-content">
-                    <h1>DNS Configuration Manager</h1>
-                    <nav>
-                        <a href="/">Home</a>
-                        <a href="/config">View Config</a>
-                        <a href="/config/edit">Edit Config</a>
-                    </nav>
-                </div>
-                <div class="theme-toggle-wrapper">
-                    <button id="theme-toggle" class="theme-toggle" onclick="toggleTheme()">🌙 Dark Mode</button>
+                <div class="header-table">
+                    <div class="header-content">
+                        <h1><a href="/">DNS Configuration Manager</a></h1>
+                        <nav>
+                            <a href="/edit/options">Options</a>
+                            <a href="/edit/local_network">Network</a>
+                            <a href="/edit/local_domains">Domains</a>
+                            <a href="/edit/blocklists">Blocklists</a>
+                            <a href="/edit/nameservers">Nameservers</a>
+                            <a href="/edit/dot">DoT</a>
+                        </nav>
+                    </div>
+                    <div class="theme-toggle-wrapper">
+                        <button id="theme-toggle" class="theme-toggle" onclick="toggleTheme()">🌙 Dark Mode</button>
+                    </div>
                 </div>
             </div>
         </header>
