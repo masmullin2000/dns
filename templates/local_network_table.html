@@ -1,5 +1,5 @@
 {% if entries.len() > 0 %}
-<div class="responsive-table-wrapper table-container">
+<div class="responsive-table-wrapper table-container" style="max-height: 980px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px;">
 <table id="entries-table" style="width: 100%; min-width: 500px; border-collapse: separate; border-spacing: 0; margin-bottom: 0; table-layout: fixed;">
 <colgroup>
     <col class="col-hostname">
@@ -7,7 +7,7 @@
     <col class="col-action-single">
     <col class="col-action-single">
 </colgroup>
-<thead style="position: sticky; top: 0; z-index: 10;">
+<thead style="position: sticky; top: 0; z-index: 10; background: #f5f5f5;">
     <tr style="background: #f5f5f5;">
         <th class="col-hostname table-cell" onclick="sortTable('hostname')" style="text-align: left; cursor: pointer; user-select: none;">
             Hostname <span id="sort-hostname" style="color: #666;">▲▼</span>
