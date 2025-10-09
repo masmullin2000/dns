@@ -6,14 +6,14 @@
 <div class="table-container">
     <h2>Edit Local Network</h2>
 
-    <p style="margin-bottom: 15px; color: #666;">
+    <p class="local-network-description">
         Define hostname to IP address mappings for your local network.
     </p>
 
     <h3>Add New Entry</h3>
     <form id="add-entry-form" hx-post="/edit/local_network/save" hx-target="#table-container" hx-swap="innerHTML">
         <div class="responsive-table-wrapper table-container">
-        <table style="width: 100%; min-width: 500px; border-collapse: collapse; margin-bottom: 20px; table-layout: fixed;">
+        <table class="local-network-add-form">
         <colgroup>
             <col class="col-hostname">
             <col class="col-ip">
@@ -21,21 +21,21 @@
             <col class="col-action-single">
         </colgroup>
         <thead>
-            <tr style="background: #f5f5f5;">
-                <th class="col-hostname table-cell" style="text-align: left;">Hostname</th>
-                <th class="col-ip table-cell" style="text-align: left;">IP Address</th>
-                <th colspan="2" class="col-action-single table-cell" style="text-align: center;">Action</th>
+            <tr>
+                <th class="col-hostname table-cell">Hostname</th>
+                <th class="col-ip table-cell">IP Address</th>
+                <th colspan="2" class="col-action-single table-cell action-col">Action</th>
             </tr>
         </thead>
         <tbody>
             <tr>
                 <td class="col-hostname table-cell">
-                    <input type="text" name="hostname" placeholder="Enter hostname" required style="width: 85%; border: none; outline: none;">
+                    <input type="text" name="hostname" placeholder="Enter hostname" required>
                 </td>
                 <td class="col-ip table-cell">
-                    <input type="text" name="ip" placeholder="Enter IP address" required style="width: 85%; border: none; outline: none;">
+                    <input type="text" name="ip" placeholder="Enter IP address" required>
                 </td>
-                <td colspan="2" class="col-action-single table-cell" style="text-align: center;">
+                <td colspan="2" class="col-action-single table-cell action-col">
                     <button type="submit" class="btn">Add</button>
                 </td>
             </tr>
@@ -49,9 +49,9 @@
         {% include "local_network_table.html" %}
     </div>
 
-<div style="margin-top: 20px; padding: 15px; background: #e8f4f8; border-left: 4px solid #3498db; border-radius: 4px;">
+<div class="tips-box">
     <strong>Tips:</strong>
-    <ul style="margin-top: 10px; margin-left: 20px;">
+    <ul>
         <li>Hostname can be any valid DNS name (e.g., <code>router</code>, <code>nas</code>, <code>workstation</code>)</li>
         <li>IP Address must be a valid IPv4 or IPv6 address</li>
         <li>Use the "Add Entry" button to create new mappings</li>
@@ -212,13 +212,13 @@ function sortTable(sortBy) {
     if (sortHostname && sortIp) {
         sortHostname.innerHTML = '▲▼';
         sortIp.innerHTML = '▲▼';
-        sortHostname.style.color = '#666';
-        sortIp.style.color = '#666';
+        sortHostname.classList.remove('active');
+        sortIp.classList.remove('active');
 
         const activeIndicator = document.getElementById('sort-' + sortBy);
         if (activeIndicator) {
             activeIndicator.innerHTML = sortState.ascending ? '▲' : '▼';
-            activeIndicator.style.color = '#3498db';
+            activeIndicator.classList.add('active');
         }
     }
 }

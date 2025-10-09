@@ -1,22 +1,22 @@
 {% if entries.len() > 0 %}
-<div class="responsive-table-wrapper table-container" style="max-height: 980px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px;">
-<table id="entries-table" style="width: 100%; min-width: 500px; border-collapse: separate; border-spacing: 0; margin-bottom: 0; table-layout: fixed;">
+<div class="responsive-table-wrapper table-container local-network-entries-container">
+<table id="entries-table" class="local-network-entries-table">
 <colgroup>
     <col class="col-hostname">
     <col class="col-ip">
     <col class="col-action-single">
     <col class="col-action-single">
 </colgroup>
-<thead style="position: sticky; top: 0; z-index: 10; background: #f5f5f5;">
-    <tr style="background: #f5f5f5;">
-        <th class="col-hostname table-cell" onclick="sortTable('hostname')" style="text-align: left; cursor: pointer; user-select: none;">
-            Hostname <span id="sort-hostname" style="color: #666;">▲▼</span>
+<thead>
+    <tr>
+        <th class="col-hostname table-cell sortable" onclick="sortTable('hostname')">
+            Hostname <span id="sort-hostname" class="sort-indicator">▲▼</span>
         </th>
-        <th class="col-ip table-cell" onclick="sortTable('ip')" style="text-align: left; cursor: pointer; user-select: none;">
-            IP Address <span id="sort-ip" style="color: #666;">▲▼</span>
+        <th class="col-ip table-cell sortable" onclick="sortTable('ip')">
+            IP Address <span id="sort-ip" class="sort-indicator">▲▼</span>
         </th>
-        <th class="col-action-single table-cell" style="text-align: center;">Edit</th>
-        <th class="col-action-single table-cell" style="text-align: center;">Remove</th>
+        <th class="col-action-single table-cell action-col">Edit</th>
+        <th class="col-action-single table-cell action-col">Remove</th>
     </tr>
 </thead>
 <tbody id="entries-tbody">
@@ -24,23 +24,23 @@
     <tr id="row-{{ entry.hostname }}">
         <td class="col-hostname table-cell" data-hostname="{{ entry.hostname }}">
             <span class="display-value">{{ entry.hostname }}</span>
-            <input type="text" class="edit-input" value="{{ entry.hostname }}" style="display: none; width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+            <input type="text" class="edit-input" value="{{ entry.hostname }}">
         </td>
         <td class="col-ip table-cell" data-ip="{{ entry.ip }}">
             <span class="display-value">{{ entry.ip }}</span>
-            <input type="text" class="edit-input" value="{{ entry.ip }}" style="display: none; width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+            <input type="text" class="edit-input" value="{{ entry.ip }}">
         </td>
-        <td class="col-action-single table-cell" style="text-align: center;">
+        <td class="col-action-single table-cell action-col">
             <button type="button" class="btn edit-save-btn" onclick="toggleEdit(this, '{{ entry.hostname }}')">Edit</button>
         </td>
-        <td class="col-action-single table-cell" style="text-align: center;">
+        <td class="col-action-single table-cell action-col">
             <button
                 hx-post="/edit/local_network/delete"
                 hx-vals='{"remove_hostname": "{{ entry.hostname }}"}'
                 hx-target="#table-container"
                 hx-confirm="Remove {{ entry.hostname }}?"
                 class="btn btn-secondary remove-btn">Remove</button>
-            <button type="button" class="btn btn-secondary cancel-btn" onclick="cancelEdit(this)" style="display: none;">Cancel</button>
+            <button type="button" class="btn btn-secondary cancel-btn" onclick="cancelEdit(this)">Cancel</button>
         </td>
     </tr>
     {% endfor %}
@@ -48,5 +48,5 @@
 </table>
 </div>
 {% else %}
-<p style="color: #666; margin-bottom: 30px;">No entries configured yet.</p>
+<p class="no-entries-message">No entries configured yet.</p>
 {% endif %}
