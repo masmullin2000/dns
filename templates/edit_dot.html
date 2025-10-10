@@ -3,71 +3,169 @@
 {% block title %}Edit DNS-over-TLS{% endblock %}
 
 {% block content %}
-<h2>Edit DNS-over-TLS Servers</h2>
+<div class="table-container">
+    <h2>Edit DNS-over-TLS Servers</h2>
 
-<p style="margin-bottom: 15px; color: #666;">
-    Configure DNS-over-TLS (DoT) servers for encrypted DNS queries. Each server requires a hostname, IP address, and port.
-</p>
+    <p class="local-network-description">
+        Configure DNS-over-TLS (DoT) servers for encrypted DNS queries. Each server requires a hostname, IP address, and port (typically 853).
+    </p>
 
-<form method="post" action="/edit/dot/save">
-    <div id="dot-servers">
-        {% for server in servers %}
-        <div class="dot-server" style="padding: 15px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
-            <div style="margin-bottom: 10px;">
-                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Hostname:</label>
-                <input type="text" name="hostname[]" value="{{ server.hostname }}" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-            </div>
-            <div style="margin-bottom: 10px;">
-                <label style="display: block; margin-bottom: 5px; font-weight: bold;">IP Address:</label>
-                <input type="text" name="ip[]" value="{{ server.ip }}" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-            </div>
-            <div style="margin-bottom: 10px;">
-                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Port:</label>
-                <input type="number" name="port[]" value="{{ server.port }}" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-            </div>
-            <button type="button" class="btn btn-secondary" onclick="this.parentElement.remove()">Remove Server</button>
+    <h3>Add New DoT Server</h3>
+    <form id="add-dot-entry-form" hx-post="/edit/dot/save" hx-target="#table-container" hx-swap="innerHTML">
+        <div class="responsive-table-wrapper table-container">
+        <table class="local-network-add-form">
+        <colgroup>
+            <col class="col-hostname">
+            <col class="col-ip">
+            <col class="col-port">
+            <col class="col-port">
+            <col class="col-action-single">
+            <col class="col-action-single">
+        </colgroup>
+        <thead>
+            <tr>
+                <th class="col-hostname table-cell">Hostname</th>
+                <th class="col-ip table-cell">IP Address</th>
+                <th colspan="2" class="col-port table-cell">Port</th>
+                <th colspan="2" class="col-action-single table-cell action-col">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="col-hostname table-cell">
+                    <input type="text" name="hostname" placeholder="e.g., cloudflare-dns.com" required>
+                </td>
+                <td class="col-ip table-cell">
+                    <input type="text" name="ip" placeholder="e.g., 1.1.1.1" required>
+                </td>
+                <td colspan="2" class="col-port table-cell">
+                    <input type="number" name="port" value="853" min="1" max="65535" required>
+                </td>
+                <!-- <td class="col-port table-cell"></td> -->
+                <td colspan="2" class="col-action-single table-cell action-col">
+                    <button type="submit" class="btn">Add</button>
+                </td>
+            </tr>
+        </tbody>
+    </table>
         </div>
-        {% endfor %}
+    </form>
+
+    <h3>Current DoT Servers</h3>
+    <div id="table-container">
+        {% include "dot_table.html" %}
     </div>
 
-    <button type="button" class="btn btn-secondary" onclick="addDotServer()" style="margin-bottom: 20px;">Add DoT Server</button>
-
-    <div class="actions">
-        <button type="submit" class="btn">Save DoT Configuration</button>
-        <a href="/" class="btn btn-secondary">Cancel</a>
-    </div>
-</form>
-
-<div style="margin-top: 20px; padding: 15px; background: #e8f4f8; border-left: 4px solid #3498db; border-radius: 4px;">
-    <strong>Example:</strong>
-    <ul style="margin-top: 10px; margin-left: 20px;">
-        <li>Cloudflare: hostname=<code>cloudflare-dns.com</code>, ip=<code>1.1.1.1</code>, port=<code>853</code></li>
-        <li>Quad9: hostname=<code>dns.quad9.net</code>, ip=<code>9.9.9.9</code>, port=<code>853</code></li>
+<div class="tips-box">
+    <strong>Tips:</strong>
+    <ul>
+        <li>Popular DoT servers:
+            <ul>
+                <li>Cloudflare: hostname=<code>cloudflare-dns.com</code>, ip=<code>1.1.1.1</code>, port=<code>853</code></li>
+                <li>Quad9: hostname=<code>dns.quad9.net</code>, ip=<code>9.9.9.9</code>, port=<code>853</code></li>
+                <li>Google: hostname=<code>dns.google</code>, ip=<code>8.8.8.8</code>, port=<code>853</code></li>
+            </ul>
+        </li>
+        <li>Hostname must match the TLS certificate of the DoT server</li>
+        <li>Port 853 is the standard port for DNS-over-TLS</li>
+        <li>DoT servers are tried in order with fallback to plain DNS if all fail</li>
     </ul>
+</div>
 </div>
 
 <script>
-function addDotServer() {
-    const container = document.getElementById('dot-servers');
-    const serverDiv = document.createElement('div');
-    serverDiv.className = 'dot-server';
-    serverDiv.style = 'padding: 15px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;';
-    serverDiv.innerHTML = `
-        <div style="margin-bottom: 10px;">
-            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Hostname:</label>
-            <input type="text" name="hostname[]" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-        </div>
-        <div style="margin-bottom: 10px;">
-            <label style="display: block; margin-bottom: 5px; font-weight: bold;">IP Address:</label>
-            <input type="text" name="ip[]" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-        </div>
-        <div style="margin-bottom: 10px;">
-            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Port:</label>
-            <input type="number" name="port[]" value="853" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-        </div>
-        <button type="button" class="btn btn-secondary" onclick="this.parentElement.remove()">Remove Server</button>
-    `;
-    container.appendChild(serverDiv);
+// Ensure script runs after DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+    // Listen for HTMX after swap to reset the form
+    document.body.addEventListener('htmx:afterSwap', function(event) {
+        if (event.detail.target.id === 'table-container') {
+            const form = document.getElementById('add-dot-entry-form');
+            if (form) {
+                form.reset();
+                // Reset port to default 853
+                const portInput = form.querySelector('input[name="port"]');
+                if (portInput) {
+                    portInput.value = '853';
+                }
+            }
+        }
+    });
+});
+
+function toggleEdit(button, oldHostname) {
+    const row = button.closest('tr');
+    const displayValues = row.querySelectorAll('.display-value');
+    const editInputs = row.querySelectorAll('.edit-input');
+    const removeBtn = row.querySelector('.remove-btn');
+    const cancelBtn = row.querySelector('.cancel-btn');
+    const isEditing = button.textContent === 'Save';
+
+    if (isEditing) {
+        // Save mode - submit via HTMX
+        const newHostname = editInputs[0].value.trim();
+        const newIp = editInputs[1].value.trim();
+        const newPort = editInputs[2].value.trim();
+
+        if (!newHostname || !newIp || !newPort) {
+            alert('All fields must be filled');
+            return;
+        }
+
+        // Use HTMX to submit the update
+        htmx.ajax('POST', '/edit/dot/update', {
+            target: '#table-container',
+            swap: 'innerHTML',
+            values: {
+                old_hostname: oldHostname,
+                new_hostname: newHostname,
+                new_ip: newIp,
+                new_port: newPort
+            }
+        });
+    } else {
+        // Edit mode - show inputs, hide displays
+        displayValues.forEach((span, index) => {
+            span.style.display = 'none';
+            editInputs[index].style.display = 'block';
+        });
+
+        // Change Edit button to Save
+        button.textContent = 'Save';
+
+        // Toggle Remove/Cancel buttons
+        removeBtn.style.display = 'none';
+        cancelBtn.style.display = 'inline-block';
+    }
 }
+
+function cancelEdit(button) {
+    const row = button.closest('tr');
+    const displayValues = row.querySelectorAll('.display-value');
+    const editInputs = row.querySelectorAll('.edit-input');
+    const editSaveBtn = row.querySelector('.edit-save-btn');
+    const removeBtn = row.querySelector('.remove-btn');
+    const cancelBtn = row.querySelector('.cancel-btn');
+
+    // Reset to original values
+    const originalHostname = row.querySelector('[data-hostname]').getAttribute('data-hostname');
+    const originalIp = row.querySelector('[data-ip]').getAttribute('data-ip');
+    const originalPort = row.querySelector('[data-port]').getAttribute('data-port');
+
+    editInputs[0].value = originalHostname;
+    editInputs[1].value = originalIp;
+    editInputs[2].value = originalPort;
+
+    // Hide inputs, show displays
+    displayValues.forEach(span => span.style.display = 'inline');
+    editInputs.forEach(input => input.style.display = 'none');
+
+    // Change Save button back to Edit
+    editSaveBtn.textContent = 'Edit';
+
+    // Toggle Cancel/Remove buttons
+    cancelBtn.style.display = 'none';
+    removeBtn.style.display = 'inline-block';
+}
+
 </script>
 {% endblock %}

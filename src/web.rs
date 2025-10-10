@@ -90,6 +90,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/edit/nameservers/save", post(web_ui::save_nameservers))
         .route("/edit/dot", get(web_ui::edit_dot))
         .route("/edit/dot/save", post(web_ui::save_dot))
+        .route("/edit/dot/update", post(web_ui::update_dot))
+        .route("/edit/dot/delete", post(web_ui::delete_dot))
+        .route("/edit/dot/move", post(web_ui::move_dot))
         .nest_service("/static", ServeDir::new("static"))
         .with_state(app_state);
 

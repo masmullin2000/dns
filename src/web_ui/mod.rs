@@ -1,6 +1,8 @@
+mod dot;
 mod local_domains;
 mod local_network;
 
+pub use dot::{edit_dot, save_dot, update_dot, delete_dot, move_dot};
 pub use local_domains::{
     edit_local_domains, save_local_domain, update_local_domain, delete_local_domain,
 };
@@ -114,25 +116,6 @@ struct EditNameserversTemplate {
     content: String,
 }
 
-#[derive(Template)]
-#[template(path = "edit_dot.html")]
-struct EditDotTemplate {
-    servers: Vec<DotServerDisplay>,
-}
-
-#[derive(Clone)]
-struct DotServerDisplay {
-    hostname: String,
-    ip: String,
-    port: u16,
-}
-
-#[derive(Deserialize)]
-pub struct DotForm {
-    hostname: Vec<String>,
-    ip: Vec<String>,
-    port: Vec<u16>,
-}
 
 pub async fn index() -> impl IntoResponse {
     let template = IndexTemplate {
@@ -298,65 +281,3 @@ pub async fn save_nameservers(
     }
 }
 
-// DoT handlers
-pub async fn edit_dot(State(state): State<AppState>) -> impl IntoResponse {
-    let config = state.parse_config().unwrap_or_default();
-    let servers = config
-        .nameservers
-        .dot
-        .unwrap_or_default()
-        .iter()
-        .map(|s| DotServerDisplay {
-            hostname: s.hostname.clone(),
-            ip: s.ip.to_string(),
-            port: s.port,
-        })
-        .collect();
-
-    let template = EditDotTemplate { servers };
-    Html(template.render().unwrap())
-}
-
-pub async fn save_dot(
-    State(state): State<AppState>,
-    Form(form): Form<DotForm>,
-) -> impl IntoResponse {
-    let mut config = match state.parse_config() {
-        Ok(c) => c,
-        Err(e) => {
-            error!("Failed to parse config: {e}");
-            return Redirect::to("/edit/dot");
-        }
-    };
-
-    let mut servers = Vec::new();
-    for i in 0..form.hostname.len() {
-        if let (Some(hostname), Some(ip_str), Some(port)) =
-            (form.hostname.get(i), form.ip.get(i), form.port.get(i))
-            && let Ok(ip) = ip_str.parse()
-        {
-            servers.push(lib::config::DotServer {
-                hostname: hostname.clone(),
-                ip,
-                port: *port,
-            });
-        }
-    }
-
-    config.nameservers.dot = if servers.is_empty() {
-        None
-    } else {
-        Some(servers)
-    };
-
-    match state.update_config(&config) {
-        Ok(()) => {
-            info!("DoT configuration saved successfully");
-            Redirect::to("/")
-        }
-        Err(e) => {
-            error!("Failed to save DoT configuration: {e}");
-            Redirect::to("/edit/dot")
-        }
-    }
-}

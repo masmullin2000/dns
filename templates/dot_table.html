@@ -1,0 +1,74 @@
+{% if entries.len() > 0 %}
+<div class="responsive-table-wrapper table-container dot-entries-container">
+<table id="entries-table" class="dot-entries-table">
+<colgroup>
+    <col class="col-order">
+    <col class="col-hostname">
+    <col class="col-ip">
+    <col class="col-port">
+    <col class="col-action-single">
+    <col class="col-action-single">
+</colgroup>
+<thead>
+    <tr>
+        <th class="col-order table-cell">Order</th>
+        <th class="col-hostname table-cell">Hostname</th>
+        <th class="col-ip table-cell">IP Address</th>
+        <th class="col-port table-cell">Port</th>
+        <th class="col-action-single table-cell action-col">Edit</th>
+        <th class="col-action-single table-cell action-col">Remove</th>
+    </tr>
+</thead>
+<tbody id="entries-tbody">
+    {% for entry in entries %}
+    <tr id="row-{{ entry.hostname }}" data-hostname="{{ entry.hostname }}">
+        <td class="col-order table-cell action-col">
+            {% if loop.index0 > 0 %}
+            <button
+                hx-post="/edit/dot/move"
+                hx-vals='{"hostname": "{{ entry.hostname }}", "direction": "up"}'
+                hx-target="#table-container"
+                class="btn btn-secondary"
+                style="padding: 2px 8px; font-size: 16px;">▲</button>
+            {% endif %}
+            {% if loop.index0 < entries.len() - 1 %}
+            <button
+                hx-post="/edit/dot/move"
+                hx-vals='{"hostname": "{{ entry.hostname }}", "direction": "down"}'
+                hx-target="#table-container"
+                class="btn btn-secondary"
+                style="padding: 2px 8px; font-size: 16px;">▼</button>
+            {% endif %}
+        </td>
+        <td class="col-hostname table-cell" data-hostname="{{ entry.hostname }}">
+            <span class="display-value">{{ entry.hostname }}</span>
+            <input type="text" class="edit-input" value="{{ entry.hostname }}">
+        </td>
+        <td class="col-ip table-cell" data-ip="{{ entry.ip }}">
+            <span class="display-value">{{ entry.ip }}</span>
+            <input type="text" class="edit-input" value="{{ entry.ip }}">
+        </td>
+        <td class="col-port table-cell" data-port="{{ entry.port }}">
+            <span class="display-value">{{ entry.port }}</span>
+            <input type="number" class="edit-input" value="{{ entry.port }}" min="1" max="65535">
+        </td>
+        <td class="col-action-single table-cell action-col">
+            <button type="button" class="btn edit-save-btn" onclick="toggleEdit(this, '{{ entry.hostname }}')">Edit</button>
+        </td>
+        <td class="col-action-single table-cell action-col">
+            <button
+                hx-post="/edit/dot/delete"
+                hx-vals='{"remove_hostname": "{{ entry.hostname }}"}'
+                hx-target="#table-container"
+                hx-confirm="Remove {{ entry.hostname }}?"
+                class="btn btn-secondary remove-btn">Remove</button>
+            <button type="button" class="btn btn-secondary cancel-btn" onclick="cancelEdit(this)">Cancel</button>
+        </td>
+    </tr>
+    {% endfor %}
+</tbody>
+</table>
+</div>
+{% else %}
+<p class="no-entries-message">No DoT servers configured yet.</p>
+{% endif %}

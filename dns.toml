@@ -51,14 +51,19 @@ ip4 = [
 ]
 
 [[nameservers.dot]]
+hostname = "dns.quad9.net"
+port = 853
+ip = "9.9.9.9"
+
+[[nameservers.dot]]
 hostname = "cloudflare-dns.com"
 port = 853
 ip = "1.1.1.1"
 
 [[nameservers.dot]]
-hostname = "dns.quad9.net"
+hostname = "google.com"
 port = 853
-ip = "9.9.9.9"
+ip = "8.8.8.8"
 
 [local_domains]
 domains = [

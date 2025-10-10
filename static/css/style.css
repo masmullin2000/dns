@@ -379,7 +379,7 @@ code {
   -webkit-overflow-scrolling: touch;
 }
 
-/* Responsive column classes */
+/* Responsive column classes - default widths */
 .col-hostname {
   width: 30%;
   border: 1px solid var(--color-border);
@@ -390,9 +390,197 @@ code {
   border: 1px solid var(--color-border);
 }
 
+/* Local Network page - specific column widths (override DoT styles) */
+#entries-table.local-network-entries-table .col-hostname {
+  width: 30%;
+}
+
+#entries-table.local-network-entries-table .col-ip {
+  width: 30%;
+}
+
+.col-port {
+  width: 10%;
+  border: 1px solid var(--color-border);
+}
+
+.col-order {
+  width: 15%;
+  border: 1px solid var(--color-border);
+}
+
+.col-domain {
+  width: 50%;
+  border: 1px solid var(--color-border);
+}
+
 .col-action-single {
   max-width: 30px;
   border: 1px solid var(--color-border);
+}
+
+/* DoT page specific table styling */
+.dot-entries-container {
+  max-height: 980px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+
+.dot-entries-table {
+  width: 100%;
+  min-width: 500px;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-bottom: 0;
+  table-layout: fixed;
+}
+
+.dot-entries-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--color-bg-table-header);
+}
+
+.dot-entries-table thead tr {
+  background: var(--color-bg-table-header);
+}
+
+.dot-entries-table th {
+  text-align: left;
+}
+
+.dot-entries-table th.action-col,
+.dot-entries-table td.action-col {
+  text-align: center;
+}
+
+.dot-entries-table .edit-input {
+  display: none;
+  width: 100%;
+  padding: 5px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+
+.dot-entries-table .cancel-btn {
+  display: none;
+}
+
+/* DoT page specific column widths */
+#entries-table.dot-entries-table .col-hostname {
+  width: 20%;
+}
+
+#entries-table.dot-entries-table .col-ip {
+  width: 18%;
+}
+
+#entries-table.dot-entries-table .col-port {
+  width: 10%;
+}
+
+#entries-table.dot-entries-table .col-order {
+  width: 12%;
+}
+
+/* DoT Current Servers table - center port column */
+#entries-table td.col-port {
+  text-align: center;
+}
+
+/* DoT Current Servers table - center port header */
+#entries-table th.col-port {
+  text-align: center;
+}
+
+/* DoT Current Servers table - right align order column */
+#entries-table td.col-order {
+  text-align: center;
+}
+
+/* DoT add form - hostname column width */
+#add-dot-entry-form .col-hostname {
+  width: 32%;
+}
+
+/* DoT add form - IP address column width */
+#add-dot-entry-form .col-ip {
+  width: 28%;
+}
+
+/* DoT add form - center port input field in column */
+#add-dot-entry-form td.col-port {
+  text-align: center;
+}
+
+/* DoT add form - center port header text */
+#add-dot-entry-form th.col-port {
+  text-align: center;
+}
+
+/* DoT page input boxes - darker background for edit inputs */
+#entries-table .edit-input {
+  background: var(--color-bg-table-header);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+}
+
+#entries-table .edit-input:focus {
+  background: var(--color-bg-content);
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+/* DoT Add form - transparent background for text inputs */
+#add-dot-entry-form input[type="text"] {
+  background: transparent;
+  border: none;
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+#add-dot-entry-form input[type="text"]:focus {
+  background: transparent;
+  outline: none;
+}
+
+/* DoT Add form - darker background for port input */
+#add-dot-entry-form input[type="number"] {
+  background: var(--color-bg-table-header);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  padding: 5px;
+  border-radius: 4px;
+}
+
+#add-dot-entry-form input[type="number"]:focus {
+  background: var(--color-bg-content);
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+/* DoT ordering buttons styling */
+#entries-table .col-order button {
+  background: transparent;
+  border: none;
+  color: var(--color-text-primary);
+  padding: 4px 10px;
+  margin: 2px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+#entries-table .col-order button:hover {
+  background: var(--color-primary);
+  color: var(--color-text-inverted);
+}
+
+#entries-table .col-order button:active {
+  transform: scale(0.95);
 }
 
 /* Grid container styling */
