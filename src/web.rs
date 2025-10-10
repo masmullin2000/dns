@@ -75,7 +75,15 @@ async fn main() -> anyhow::Result<()> {
             post(web_ui::delete_local_network),
         )
         .route("/edit/local_domains", get(web_ui::edit_local_domains))
-        .route("/edit/local_domains/save", post(web_ui::save_local_domains))
+        .route("/edit/local_domains/save", post(web_ui::save_local_domain))
+        .route(
+            "/edit/local_domains/update",
+            post(web_ui::update_local_domain),
+        )
+        .route(
+            "/edit/local_domains/delete",
+            post(web_ui::delete_local_domain),
+        )
         .route("/edit/blocklists", get(web_ui::edit_blocklists))
         .route("/edit/blocklists/save", post(web_ui::save_blocklists))
         .route("/edit/nameservers", get(web_ui::edit_nameservers))

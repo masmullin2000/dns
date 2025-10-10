@@ -1,5 +1,9 @@
+mod local_domains;
 mod local_network;
 
+pub use local_domains::{
+    edit_local_domains, save_local_domain, update_local_domain, delete_local_domain,
+};
 pub use local_network::{
     edit_local_network, save_local_network, update_local_network, delete_local_network,
 };
@@ -97,11 +101,6 @@ pub struct OptionsForm {
     force_dot: Option<String>,
 }
 
-#[derive(Template)]
-#[template(path = "edit_local_domains.html")]
-struct EditLocalDomainsTemplate {
-    content: String,
-}
 
 #[derive(Template)]
 #[template(path = "edit_blocklists.html")]
@@ -211,52 +210,6 @@ pub async fn save_options(
         Err(e) => {
             error!("Failed to save options: {e}");
             Redirect::to("/edit/options")
-        }
-    }
-}
-
-// Local domains handlers
-pub async fn edit_local_domains(State(state): State<AppState>) -> impl IntoResponse {
-    let config = state.parse_config().unwrap_or_default();
-    let content = config.local_domains.domains.unwrap_or_default().join("\n");
-
-    let template = EditLocalDomainsTemplate { content };
-    Html(template.render().unwrap())
-}
-
-pub async fn save_local_domains(
-    State(state): State<AppState>,
-    Form(form): Form<ConfigForm>,
-) -> impl IntoResponse {
-    let mut config = match state.parse_config() {
-        Ok(c) => c,
-        Err(e) => {
-            error!("Failed to parse config: {e}");
-            return Redirect::to("/edit/local_domains");
-        }
-    };
-
-    let domains: Vec<String> = form
-        .content
-        .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect();
-
-    config.local_domains.domains = if domains.is_empty() {
-        None
-    } else {
-        Some(domains)
-    };
-
-    match state.update_config(&config) {
-        Ok(()) => {
-            info!("Local domains saved successfully");
-            Redirect::to("/")
-        }
-        Err(e) => {
-            error!("Failed to save local domains: {e}");
-            Redirect::to("/edit/local_domains")
         }
     }
 }

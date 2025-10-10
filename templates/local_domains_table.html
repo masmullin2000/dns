@@ -1,0 +1,44 @@
+{% if entries.len() > 0 %}
+<div class="responsive-table-wrapper table-container local-network-entries-container">
+<table id="entries-table" class="local-network-entries-table">
+<colgroup>
+    <col class="col-domain">
+    <col class="col-action-single">
+    <col class="col-action-single">
+</colgroup>
+<thead>
+    <tr>
+        <th class="col-domain table-cell sortable" onclick="sortTable('domain')">
+            Domain <span id="sort-domain" class="sort-indicator">▲▼</span>
+        </th>
+        <th class="col-action-single table-cell action-col">Edit</th>
+        <th class="col-action-single table-cell action-col">Remove</th>
+    </tr>
+</thead>
+<tbody id="entries-tbody">
+    {% for entry in entries %}
+    <tr id="row-{{ entry.domain }}">
+        <td class="col-domain table-cell" data-domain="{{ entry.domain }}">
+            <span class="display-value">{{ entry.domain }}</span>
+            <input type="text" class="edit-input" value="{{ entry.domain }}">
+        </td>
+        <td class="col-action-single table-cell action-col">
+            <button type="button" class="btn edit-save-btn" onclick="toggleEdit(this, '{{ entry.domain }}')">Edit</button>
+        </td>
+        <td class="col-action-single table-cell action-col">
+            <button
+                hx-post="/edit/local_domains/delete"
+                hx-vals='{"remove_domain": "{{ entry.domain }}"}'
+                hx-target="#table-container"
+                hx-confirm="Remove {{ entry.domain }}?"
+                class="btn btn-secondary remove-btn">Remove</button>
+            <button type="button" class="btn btn-secondary cancel-btn" onclick="cancelEdit(this)">Cancel</button>
+        </td>
+    </tr>
+    {% endfor %}
+</tbody>
+</table>
+</div>
+{% else %}
+<p class="no-entries-message">No domains configured yet.</p>
+{% endif %}

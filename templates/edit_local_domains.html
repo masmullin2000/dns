@@ -3,28 +3,172 @@
 {% block title %}Edit Local Domains{% endblock %}
 
 {% block content %}
-<h2>Edit Local Domains</h2>
+<div class="table-container">
+    <h2>Edit Local Domains</h2>
 
-<p style="margin-bottom: 15px; color: #666;">
-    Define domain suffixes for local resolution. Enter one domain per line.
-</p>
-
-<form method="post" action="/edit/local_domains/save">
-    <textarea name="content" style="min-height: 300px;" required>{{ content }}</textarea>
-
-    <div class="actions">
-        <button type="submit" class="btn">Save Local Domains</button>
-        <a href="/" class="btn btn-secondary">Cancel</a>
-    </div>
-</form>
-
-<div style="margin-top: 20px; padding: 15px; background: #e8f4f8; border-left: 4px solid #3498db; border-radius: 4px;">
-    <strong>Example:</strong>
-    <pre style="margin-top: 10px; background: white; padding: 10px; border-radius: 4px;"><code>local
-home
-lan</code></pre>
-    <p style="margin-top: 10px; font-size: 14px;">
-        With these settings, <code>router.local</code>, <code>nas.home</code>, and <code>server.lan</code> will resolve using your local network mappings.
+    <p class="local-network-description">
+        Define domain suffixes for local resolution. Domains like <code>.local</code>, <code>.home</code>, or <code>.lan</code> will resolve using your local network mappings.
     </p>
+
+    <h3>Add New Domain</h3>
+    <form id="add-entry-form" hx-post="/edit/local_domains/save" hx-target="#table-container" hx-swap="innerHTML">
+        <div class="responsive-table-wrapper table-container">
+        <table class="local-network-add-form">
+        <colgroup>
+            <col class="col-domain">
+            <col class="col-action-single">
+            <col class="col-action-single">
+        </colgroup>
+        <thead>
+            <tr>
+                <th class="col-domain table-cell">Domain</th>
+                <th colspan="2" class="col-action-single table-cell action-col">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="col-domain table-cell">
+                    <input type="text" name="domain" placeholder="Enter domain (e.g., local, home, lan)" required>
+                </td>
+                <td colspan="2" class="col-action-single table-cell action-col">
+                    <button type="submit" class="btn">Add</button>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+        </div>
+    </form>
+
+    <h3>Current Domains</h3>
+    <div id="table-container">
+        {% include "local_domains_table.html" %}
+    </div>
+
+<div class="tips-box">
+    <strong>Tips:</strong>
+    <ul>
+        <li>Enter domains without the dot (e.g., <code>local</code>, <code>home</code>)</li>
+        <li>These domains will use your local network hostname mappings for resolution</li>
+        <li>Use "Add Domain" to create new entries</li>
+        <li>Use "Remove" to delete unwanted domains</li>
+    </ul>
 </div>
+</div>
+
+<script>
+// Ensure script runs after DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+    // Listen for HTMX after swap to reset the form
+    document.body.addEventListener('htmx:afterSwap', function(event) {
+        if (event.detail.target.id === 'table-container') {
+            const form = document.getElementById('add-entry-form');
+            if (form) {
+                form.reset();
+            }
+        }
+    });
+});
+
+let sortState = {
+    column: null,
+    ascending: true
+};
+
+function toggleEdit(button, oldDomain) {
+    const row = button.closest('tr');
+    const displayValue = row.querySelector('.display-value');
+    const editInput = row.querySelector('.edit-input');
+    const removeBtn = row.querySelector('.remove-btn');
+    const cancelBtn = row.querySelector('.cancel-btn');
+    const isEditing = button.textContent === 'Save';
+
+    if (isEditing) {
+        // Save mode - submit via HTMX
+        const newDomain = editInput.value.trim();
+
+        if (!newDomain) {
+            alert('Domain cannot be empty');
+            return;
+        }
+
+        // Use HTMX to submit the update
+        htmx.ajax('POST', '/edit/local_domains/update', {
+            target: '#table-container',
+            swap: 'innerHTML',
+            values: {
+                old_domain: oldDomain,
+                new_domain: newDomain
+            }
+        });
+    } else {
+        // Edit mode - show input, hide display
+        displayValue.style.display = 'none';
+        editInput.style.display = 'block';
+
+        // Change Edit button to Save
+        button.textContent = 'Save';
+
+        // Toggle Remove/Cancel buttons
+        removeBtn.style.display = 'none';
+        cancelBtn.style.display = 'inline-block';
+    }
+}
+
+function cancelEdit(button) {
+    const row = button.closest('tr');
+    const displayValue = row.querySelector('.display-value');
+    const editInput = row.querySelector('.edit-input');
+    const editSaveBtn = row.querySelector('.edit-save-btn');
+    const removeBtn = row.querySelector('.remove-btn');
+    const cancelBtn = row.querySelector('.cancel-btn');
+
+    // Reset to original value
+    const originalDomain = row.querySelector('[data-domain]').getAttribute('data-domain');
+    editInput.value = originalDomain;
+
+    // Hide input, show display
+    displayValue.style.display = 'inline';
+    editInput.style.display = 'none';
+
+    // Change Save button back to Edit
+    editSaveBtn.textContent = 'Edit';
+
+    // Toggle Cancel/Remove buttons
+    cancelBtn.style.display = 'none';
+    removeBtn.style.display = 'inline-block';
+}
+
+function sortTable(sortBy) {
+    const tbody = document.getElementById('entries-tbody');
+    if (!tbody) return; // Guard against missing element
+
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    // Toggle sort direction if clicking the same column
+    if (sortState.column === sortBy) {
+        sortState.ascending = !sortState.ascending;
+    } else {
+        sortState.column = sortBy;
+        sortState.ascending = true;
+    }
+
+    rows.sort((a, b) => {
+        const aValue = a.querySelector('[data-domain]').getAttribute('data-domain').toLowerCase();
+        const bValue = b.querySelector('[data-domain]').getAttribute('data-domain').toLowerCase();
+
+        const result = aValue.localeCompare(bValue);
+        return sortState.ascending ? result : -result;
+    });
+
+    // Re-append rows in sorted order
+    rows.forEach(row => tbody.appendChild(row));
+
+    // Update sort indicator
+    const sortIndicator = document.getElementById('sort-domain');
+    if (sortIndicator) {
+        sortIndicator.innerHTML = sortState.ascending ? '▲' : '▼';
+        sortIndicator.classList.add('active');
+    }
+}
+</script>
 {% endblock %}
