@@ -1,14 +1,16 @@
 mod dot;
 mod local_domains;
 mod local_network;
+mod nameservers;
 
-pub use dot::{edit_dot, save_dot, update_dot, delete_dot, move_dot};
+pub use dot::{delete_dot, edit_dot, move_dot, save_dot, update_dot};
 pub use local_domains::{
-    edit_local_domains, save_local_domain, update_local_domain, delete_local_domain,
+    delete_local_domain, edit_local_domains, save_local_domain, update_local_domain,
 };
 pub use local_network::{
-    edit_local_network, save_local_network, update_local_network, delete_local_network,
+    delete_local_network, edit_local_network, save_local_network, update_local_network,
 };
+pub use nameservers::{delete_nameservers, edit_nameservers, save_nameservers, update_nameservers};
 
 use askama::Template;
 use axum::{
@@ -103,19 +105,11 @@ pub struct OptionsForm {
     dot: String,
 }
 
-
 #[derive(Template)]
 #[template(path = "edit_blocklists.html")]
 struct EditBlocklistsTemplate {
     content: String,
 }
-
-#[derive(Template)]
-#[template(path = "edit_nameservers.html")]
-struct EditNameserversTemplate {
-    content: String,
-}
-
 
 pub async fn index() -> impl IntoResponse {
     let template = IndexTemplate {
@@ -247,46 +241,3 @@ pub async fn save_blocklists(
         }
     }
 }
-
-// Nameservers handlers
-pub async fn edit_nameservers(State(state): State<AppState>) -> impl IntoResponse {
-    let config = state.parse_config().unwrap_or_default();
-    let ips: Vec<String> = config.nameservers.ip4.iter().cloned().collect();
-    let content = ips.join("\n");
-
-    let template = EditNameserversTemplate { content };
-    Html(template.render().unwrap())
-}
-
-pub async fn save_nameservers(
-    State(state): State<AppState>,
-    Form(form): Form<ConfigForm>,
-) -> impl IntoResponse {
-    let mut config = match state.parse_config() {
-        Ok(c) => c,
-        Err(e) => {
-            error!("Failed to parse config: {e}");
-            return Redirect::to("/edit/nameservers");
-        }
-    };
-
-    config.nameservers.ip4.clear();
-    for line in form.content.lines() {
-        let line = line.trim();
-        if !line.is_empty() {
-            config.nameservers.ip4.insert(line.to_string());
-        }
-    }
-
-    match state.update_config(&config) {
-        Ok(()) => {
-            info!("Nameservers saved successfully");
-            Redirect::to("/")
-        }
-        Err(e) => {
-            error!("Failed to save nameservers: {e}");
-            Redirect::to("/edit/nameservers")
-        }
-    }
-}
-

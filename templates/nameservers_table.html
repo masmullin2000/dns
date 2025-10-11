@@ -1,0 +1,44 @@
+{% if entries.len() > 0 %}
+<div class="responsive-table-wrapper table-container nameservers-entries-container">
+<table id="entries-table" class="nameservers-entries-table">
+<colgroup>
+    <col class="col-ip">
+    <col class="col-action-single">
+    <col class="col-action-single">
+</colgroup>
+<thead>
+    <tr>
+        <th class="col-ip table-cell sortable" onclick="sortTable('ip')">
+            IP Address <span id="sort-ip" class="sort-indicator">▲▼</span>
+        </th>
+        <th class="col-action-single table-cell action-col">Edit</th>
+        <th class="col-action-single table-cell action-col">Remove</th>
+    </tr>
+</thead>
+<tbody id="entries-tbody">
+    {% for entry in entries %}
+    <tr id="row-{{ entry.ip }}">
+        <td class="col-ip table-cell" data-ip="{{ entry.ip }}">
+            <span class="display-value">{{ entry.ip }}</span>
+            <input type="text" class="edit-input" value="{{ entry.ip }}">
+        </td>
+        <td class="col-action-single table-cell action-col">
+            <button type="button" class="btn edit-save-btn" onclick="toggleEdit(this, '{{ entry.ip }}')">Edit</button>
+        </td>
+        <td class="col-action-single table-cell action-col">
+            <button
+                hx-post="/edit/nameservers/delete"
+                hx-vals='{"remove_ip": "{{ entry.ip }}"}'
+                hx-target="#table-container"
+                hx-confirm="Remove {{ entry.ip }}?"
+                class="btn btn-secondary remove-btn">Remove</button>
+            <button type="button" class="btn btn-secondary cancel-btn" onclick="cancelEdit(this)">Cancel</button>
+        </td>
+    </tr>
+    {% endfor %}
+</tbody>
+</table>
+</div>
+{% else %}
+<p class="no-entries-message">No nameservers configured yet.</p>
+{% endif %}

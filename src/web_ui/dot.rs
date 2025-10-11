@@ -362,10 +362,7 @@ pub async fn move_dot(
 
             match state.update_config(&config) {
                 Ok(()) => {
-                    info!(
-                        "Moved DoT server {} {}",
-                        form.hostname, form.direction
-                    );
+                    info!("Moved DoT server {} {}", form.hostname, form.direction);
                     if is_htmx_request(&headers) {
                         let entries = get_dot_servers_from_config(&state);
                         let template = DotTableTemplate { entries };

@@ -232,12 +232,12 @@ fn cache_dns_packet(
                 dns::rdata::RData::A(a) => {
                     let addr = IpAddr::V4(Ipv4Addr::from(a.address));
                     cache.insert(qname, dns_cache::IpAddr::new(addr, ttl));
-                    trace!("for {client_addr} - {qname}:{ttl} A: {addr} (via DoT)");
+                    trace!("for {client_addr} - {qname}:{ttl} A: {addr}");
                 }
                 dns::rdata::RData::AAAA(a) => {
                     let addr = IpAddr::V6(Ipv6Addr::from(a.address));
                     cache.insert(qname, dns_cache::IpAddr::new(addr, ttl));
-                    trace!("for {client_addr} - {qname}:{ttl} AAAA: {addr} (via DoT)");
+                    trace!("for {client_addr} - {qname}:{ttl} AAAA: {addr}");
                 }
                 _ => (),
             }
@@ -335,7 +335,7 @@ where
         }
 
         // If DoT is forced and all servers failed, return error
-        if config.dot == DotEnabled::Force{
+        if config.dot == DotEnabled::Force {
             return Ok(dns_fail(&pkt, dns::RCODE::ServerFailure));
         }
     }
@@ -416,13 +416,21 @@ pub fn udp_server(
             let Ok((sz, addr)) = sock
                 .recv_from(&mut buf)
                 .await
-                .inspect(|(_, addr)| debug!("Received UDP DNS request from {addr}"))
+                .inspect(|(_, addr)| trace!("Received UDP DNS request from {addr}"))
                 .inspect_err(|e| {
                     error!("Failed to receive DNS packet: {e}");
                 })
             else {
                 continue;
             };
+
+            // if addr.ip() != IpAddr::V4(Ipv4Addr::from_str("172.16.0.3").unwrap()) && addr.ip() != IpAddr::V4(Ipv4Addr::from_str("172.16.0.1").unwrap())
+            // {
+            //     trace!("Ignoring DNS request from unspecified address: {addr}");
+            //     continue;
+            // } else {
+            //     debug!("received udp dns from {addr}: {buf:?}");
+            // }
             let buf = buf[..sz].to_vec();
             if let Err(e) = tx.send(ChannelData::new(buf, addr, sock.clone())).await {
                 panic!("{sock:?} channel send failed: {e}");

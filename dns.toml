@@ -50,10 +50,7 @@ work = "172.16.1.3"
 x13s = "172.16.100.100"
 
 [nameservers]
-ip4 = [
-    "9.9.9.9",
-    "1.1.1.1",
-]
+ip4 = ["1.1.1.1"]
 
 [[nameservers.dot]]
 hostname = "protected.canadianshield.cira.ca"
@@ -86,4 +83,4 @@ files = [
 ]
 
 [options]
-dot = "force"
+dot = "on"

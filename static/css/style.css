@@ -227,6 +227,44 @@ nav a:hover {
   table-layout: fixed;
 }
 
+/* Nameservers specific styles */
+.nameservers-description {
+  margin-bottom: 15px;
+  color: var(--color-text-secondary);
+}
+
+.nameservers-add-form {
+  width: 100%;
+  min-width: 500px;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+  table-layout: fixed;
+}
+
+.nameservers-add-form thead tr {
+  background: var(--color-bg-table-header);
+}
+
+.nameservers-add-form th {
+  text-align: left;
+}
+
+.nameservers-add-form th.action-col {
+  text-align: center;
+}
+
+.nameservers-add-form input[type="text"] {
+  width: 85%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--color-text-primary);
+}
+
+.nameservers-add-form td.action-col {
+  text-align: center;
+}
+
 .local-network-add-form thead tr {
   background: var(--color-bg-table-header);
 }
@@ -350,6 +388,67 @@ nav a:hover {
   display: none;
 }
 
+.nameservers-entries-container {
+  max-height: 980px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+
+.nameservers-entries-table {
+  width: 100%;
+  min-width: 500px;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-bottom: 0;
+  table-layout: fixed;
+}
+
+.nameservers-entries-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--color-bg-table-header);
+}
+
+.nameservers-entries-table thead tr {
+  background: var(--color-bg-table-header);
+}
+
+.nameservers-entries-table th {
+  text-align: left;
+}
+
+.nameservers-entries-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.nameservers-entries-table th.action-col,
+.nameservers-entries-table td.action-col {
+  text-align: center;
+}
+
+.nameservers-entries-table .sort-indicator {
+  color: var(--color-text-secondary);
+}
+
+.nameservers-entries-table .sort-indicator.active {
+  color: var(--color-primary);
+}
+
+.nameservers-entries-table .edit-input {
+  display: none;
+  width: 100%;
+  padding: 5px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+
+.nameservers-entries-table .cancel-btn {
+  display: none;
+}
+
 .tips-box {
   margin-top: 20px;
   padding: 15px;
@@ -426,6 +525,15 @@ code {
 .col-ip {
   width: 30%;
   border: 1px solid var(--color-border);
+}
+
+/* Nameservers page - IP column width */
+#entries-table.nameservers-entries-table .col-ip {
+  width: 45%;
+}
+
+.nameservers-add-form .col-ip {
+  width: 45%;
 }
 
 /* Local Network page - specific column widths (override DoT styles) */
@@ -719,6 +827,12 @@ code {
   #entries-table.dot-entries-table .col-ip {
     width: 30% !important;
   }
+  #entries-table.nameservers-entries-table .col-ip {
+    width: 45% !important;
+  }
+  .nameservers-add-form .col-ip {
+    width: 45% !important;
+  }
 }
 
 @media (max-width: 480px) {
@@ -749,5 +863,11 @@ code {
   }
   #entries-table.dot-entries-table .col-action-single {
     width: auto !important;
+  }
+  #entries-table.nameservers-entries-table .col-ip {
+    width: 30% !important;
+  }
+  .nameservers-add-form .col-ip {
+    width: 30% !important;
   }
 }

@@ -88,6 +88,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/edit/blocklists/save", post(web_ui::save_blocklists))
         .route("/edit/nameservers", get(web_ui::edit_nameservers))
         .route("/edit/nameservers/save", post(web_ui::save_nameservers))
+        .route("/edit/nameservers/update", post(web_ui::update_nameservers))
+        .route("/edit/nameservers/delete", post(web_ui::delete_nameservers))
         .route("/edit/dot", get(web_ui::edit_dot))
         .route("/edit/dot/save", post(web_ui::save_dot))
         .route("/edit/dot/update", post(web_ui::update_dot))

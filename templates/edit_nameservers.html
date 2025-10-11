@@ -1,30 +1,195 @@
 {% extends "base.html" %}
 
-{% block title %}Edit Nameservers{% endblock %}
+{% block title %}Edit Plain DNS Nameservers{% endblock %}
 
 {% block content %}
-<h2>Edit Plain DNS Nameservers</h2>
+<div class="table-container">
+    <h2>Edit Plain DNS Nameservers</h2>
 
-<p style="margin-bottom: 15px; color: #666;">
-    Define fallback plain DNS servers (used when DoT is unavailable or force_dot is disabled). Enter one IP address per line.
-</p>
-
-<form method="post" action="/edit/nameservers/save">
-    <textarea name="content" style="min-height: 300px; font-family: monospace;" required>{{ content }}</textarea>
-
-    <div class="actions">
-        <button type="submit" class="btn">Save Nameservers</button>
-        <a href="/" class="btn btn-secondary">Cancel</a>
-    </div>
-</form>
-
-<div style="margin-top: 20px; padding: 15px; background: #e8f4f8; border-left: 4px solid #3498db; border-radius: 4px;">
-    <strong>Example:</strong>
-    <pre style="margin-top: 10px; background: white; padding: 10px; border-radius: 4px;"><code>1.1.1.1
-9.9.9.9
-8.8.8.8</code></pre>
-    <p style="margin-top: 10px; font-size: 14px;">
-        These are standard DNS servers without encryption (port 53).
+    <p class="nameservers-description">
+        Configure fallback DNS servers. These are used when DNS-over-TLS servers are unavailable or disabled.
     </p>
+
+    <h3>Add New Nameserver</h3>
+    <form id="add-entry-form" hx-post="/edit/nameservers/save" hx-target="#table-container" hx-swap="innerHTML">
+        <div class="responsive-table-wrapper table-container">
+        <table class="nameservers-add-form">
+        <colgroup>
+            <col class="col-ip">
+            <col class="col-action-single">
+        </colgroup>
+        <thead>
+            <tr>
+                <th class="col-ip table-cell">IP Address</th>
+                <th class="col-action-single table-cell action-col">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="col-ip table-cell">
+                    <input type="text" name="ip" placeholder="Enter IP address (e.g., 1.1.1.1)" required>
+                </td>
+                <td class="col-action-single table-cell action-col">
+                    <button type="submit" class="btn">Add</button>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+        </div>
+    </form>
+
+    <h3>Current Nameservers</h3>
+    <div id="table-container">
+        {% include "nameservers_table.html" %}
+    </div>
+
+<div class="tips-box">
+    <strong>Tips:</strong>
+    <ul>
+        <li>IP Address must be a valid IPv4 or IPv6 address</li>
+        <li>Common DNS providers: Cloudflare (1.1.1.1), Quad9 (9.9.9.9), Google (8.8.8.8)</li>
+        <li>Use the "Add" button to add new nameservers</li>
+        <li>Use "Remove" to delete unwanted entries</li>
+    </ul>
 </div>
+</div>
+
+<script>
+// Ensure script runs after DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+    // Listen for HTMX after swap to reset the form
+    document.body.addEventListener('htmx:afterSwap', function(event) {
+        if (event.detail.target.id === 'table-container') {
+            const form = document.getElementById('add-entry-form');
+            if (form) {
+                form.reset();
+            }
+        }
+    });
+});
+
+let sortState = {
+    column: null,
+    ascending: true
+};
+
+function toggleEdit(button, oldIp) {
+    const row = button.closest('tr');
+    const displayValue = row.querySelector('.display-value');
+    const editInput = row.querySelector('.edit-input');
+    const removeBtn = row.querySelector('.remove-btn');
+    const cancelBtn = row.querySelector('.cancel-btn');
+    const isEditing = button.textContent === 'Save';
+
+    if (isEditing) {
+        // Save mode - submit via HTMX
+        const newIp = editInput.value.trim();
+
+        if (!newIp) {
+            alert('IP address cannot be empty');
+            return;
+        }
+
+        // Use HTMX to submit the update
+        htmx.ajax('POST', '/edit/nameservers/update', {
+            target: '#table-container',
+            swap: 'innerHTML',
+            values: {
+                old_ip: oldIp,
+                new_ip: newIp
+            }
+        });
+    } else {
+        // Edit mode - show input, hide display
+        displayValue.style.display = 'none';
+        editInput.style.display = 'block';
+
+        // Change Edit button to Save
+        button.textContent = 'Save';
+
+        // Toggle Remove/Cancel buttons
+        removeBtn.style.display = 'none';
+        cancelBtn.style.display = 'inline-block';
+    }
+}
+
+function cancelEdit(button) {
+    const row = button.closest('tr');
+    const displayValue = row.querySelector('.display-value');
+    const editInput = row.querySelector('.edit-input');
+    const editSaveBtn = row.querySelector('.edit-save-btn');
+    const removeBtn = row.querySelector('.remove-btn');
+    const cancelBtn = row.querySelector('.cancel-btn');
+
+    // Reset to original value
+    const originalIp = row.querySelector('[data-ip]').getAttribute('data-ip');
+    editInput.value = originalIp;
+
+    // Hide input, show display
+    displayValue.style.display = 'inline';
+    editInput.style.display = 'none';
+
+    // Change Save button back to Edit
+    editSaveBtn.textContent = 'Edit';
+
+    // Toggle Cancel/Remove buttons
+    cancelBtn.style.display = 'none';
+    removeBtn.style.display = 'inline-block';
+}
+
+function sortTable(sortBy) {
+    const tbody = document.getElementById('entries-tbody');
+    if (!tbody) return; // Guard against missing element
+
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    // Toggle sort direction if clicking the same column
+    if (sortState.column === sortBy) {
+        sortState.ascending = !sortState.ascending;
+    } else {
+        sortState.column = sortBy;
+        sortState.ascending = true;
+    }
+
+    if (sortBy === 'ip') {
+        rows.sort((a, b) => {
+            const aValue = a.querySelector('[data-ip]').getAttribute('data-ip');
+            const bValue = b.querySelector('[data-ip]').getAttribute('data-ip');
+
+            // Convert IPs to comparable format
+            const ipToNum = (ip) => {
+                const parts = ip.split('.');
+                if (parts.length === 4) {
+                    // IPv4
+                    return parts.reduce((acc, part) => acc * 256 + parseInt(part), 0);
+                } else {
+                    // IPv6 or other - use string comparison
+                    return ip;
+                }
+            };
+
+            const aNum = ipToNum(aValue);
+            const bNum = ipToNum(bValue);
+
+            let result;
+            if (typeof aNum === 'number' && typeof bNum === 'number') {
+                result = aNum - bNum;
+            } else {
+                result = String(aNum).localeCompare(String(bNum));
+            }
+            return sortState.ascending ? result : -result;
+        });
+    }
+
+    // Re-append rows in sorted order
+    rows.forEach(row => tbody.appendChild(row));
+
+    // Update sort indicator
+    const sortIp = document.getElementById('sort-ip');
+    if (sortIp) {
+        sortIp.innerHTML = sortState.ascending ? '▲' : '▼';
+        sortIp.classList.add('active');
+    }
+}
+</script>
 {% endblock %}
