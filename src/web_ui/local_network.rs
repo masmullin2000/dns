@@ -3,7 +3,7 @@ use axum::{
     Form,
     extract::State,
     http::HeaderMap,
-    response::{Html, IntoResponse, Redirect},
+    response::{IntoResponse, Redirect},
 };
 use serde::Deserialize;
 use tracing::{error, info};
@@ -76,7 +76,7 @@ pub async fn edit_local_network(State(state): State<AppState>) -> impl IntoRespo
         .collect();
 
     let template = EditLocalNetworkTemplate { entries };
-    Html(template.render().unwrap())
+    super::render_template(template)
 }
 
 pub async fn save_local_network(
@@ -97,7 +97,7 @@ pub async fn save_local_network(
         if is_htmx_request(&headers) {
             let entries = get_entries_from_config(&state);
             let template = LocalNetworkTableTemplate { entries };
-            return Html(template.render().unwrap()).into_response();
+            return super::render_template(template).into_response();
         }
         return Redirect::to("/edit/local_network").into_response();
     }
@@ -109,7 +109,7 @@ pub async fn save_local_network(
             if is_htmx_request(&headers) {
                 let entries = get_entries_from_config(&state);
                 let template = LocalNetworkTableTemplate { entries };
-                return Html(template.render().unwrap()).into_response();
+                return super::render_template(template).into_response();
             }
             return Redirect::to("/edit/local_network").into_response();
         }
@@ -127,7 +127,7 @@ pub async fn save_local_network(
             if is_htmx_request(&headers) {
                 let entries = get_entries_from_config(&state);
                 let template = LocalNetworkTableTemplate { entries };
-                return Html(template.render().unwrap()).into_response();
+                return super::render_template(template).into_response();
             }
             return Redirect::to("/edit/local_network").into_response();
         }
@@ -142,7 +142,7 @@ pub async fn save_local_network(
             if is_htmx_request(&headers) {
                 let entries = get_entries_from_config(&state);
                 let template = LocalNetworkTableTemplate { entries };
-                Html(template.render().unwrap()).into_response()
+                super::render_template(template).into_response()
             } else {
                 Redirect::to("/edit/local_network").into_response()
             }
@@ -152,7 +152,7 @@ pub async fn save_local_network(
             if is_htmx_request(&headers) {
                 let entries = get_entries_from_config(&state);
                 let template = LocalNetworkTableTemplate { entries };
-                Html(template.render().unwrap()).into_response()
+                super::render_template(template).into_response()
             } else {
                 Redirect::to("/edit/local_network").into_response()
             }
@@ -172,7 +172,7 @@ pub async fn update_local_network(
             if is_htmx_request(&headers) {
                 let entries = get_entries_from_config(&state);
                 let template = LocalNetworkTableTemplate { entries };
-                return Html(template.render().unwrap()).into_response();
+                return super::render_template(template).into_response();
             }
             return Redirect::to("/edit/local_network").into_response();
         }
@@ -197,7 +197,7 @@ pub async fn update_local_network(
                 if is_htmx_request(&headers) {
                     let entries = get_entries_from_config(&state);
                     let template = LocalNetworkTableTemplate { entries };
-                    Html(template.render().unwrap()).into_response()
+                    super::render_template(template).into_response()
                 } else {
                     Redirect::to("/edit/local_network").into_response()
                 }
@@ -207,7 +207,7 @@ pub async fn update_local_network(
                 if is_htmx_request(&headers) {
                     let entries = get_entries_from_config(&state);
                     let template = LocalNetworkTableTemplate { entries };
-                    Html(template.render().unwrap()).into_response()
+                    super::render_template(template).into_response()
                 } else {
                     Redirect::to("/edit/local_network").into_response()
                 }
@@ -218,7 +218,7 @@ pub async fn update_local_network(
         if is_htmx_request(&headers) {
             let entries = get_entries_from_config(&state);
             let template = LocalNetworkTableTemplate { entries };
-            Html(template.render().unwrap()).into_response()
+            super::render_template(template).into_response()
         } else {
             Redirect::to("/edit/local_network").into_response()
         }
@@ -237,7 +237,7 @@ pub async fn delete_local_network(
             if is_htmx_request(&headers) {
                 let entries = get_entries_from_config(&state);
                 let template = LocalNetworkTableTemplate { entries };
-                return Html(template.render().unwrap()).into_response();
+                return super::render_template(template).into_response();
             }
             return Redirect::to("/edit/local_network").into_response();
         }
@@ -256,7 +256,7 @@ pub async fn delete_local_network(
                 if is_htmx_request(&headers) {
                     let entries = get_entries_from_config(&state);
                     let template = LocalNetworkTableTemplate { entries };
-                    Html(template.render().unwrap()).into_response()
+                    super::render_template(template).into_response()
                 } else {
                     Redirect::to("/edit/local_network").into_response()
                 }
@@ -266,7 +266,7 @@ pub async fn delete_local_network(
                 if is_htmx_request(&headers) {
                     let entries = get_entries_from_config(&state);
                     let template = LocalNetworkTableTemplate { entries };
-                    Html(template.render().unwrap()).into_response()
+                    super::render_template(template).into_response()
                 } else {
                     Redirect::to("/edit/local_network").into_response()
                 }
@@ -277,7 +277,7 @@ pub async fn delete_local_network(
         if is_htmx_request(&headers) {
             let entries = get_entries_from_config(&state);
             let template = LocalNetworkTableTemplate { entries };
-            Html(template.render().unwrap()).into_response()
+            super::render_template(template).into_response()
         } else {
             Redirect::to("/edit/local_network").into_response()
         }

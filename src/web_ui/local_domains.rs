@@ -3,7 +3,7 @@ use axum::{
     Form,
     extract::State,
     http::HeaderMap,
-    response::{Html, IntoResponse, Redirect},
+    response::{IntoResponse, Redirect},
 };
 use serde::Deserialize;
 use tracing::{error, info};
@@ -63,7 +63,7 @@ struct DomainEntry {
 pub async fn edit_local_domains(State(state): State<AppState>) -> impl IntoResponse {
     let entries = get_domains_from_config(&state);
     let template = EditLocalDomainsTemplate { entries };
-    Html(template.render().unwrap())
+    super::render_template(template)
 }
 
 pub async fn save_local_domain(
@@ -80,7 +80,7 @@ pub async fn save_local_domain(
         if is_htmx_request(&headers) {
             let entries = get_domains_from_config(&state);
             let template = LocalDomainsTableTemplate { entries };
-            return Html(template.render().unwrap()).into_response();
+            return super::render_template(template).into_response();
         }
         return Redirect::to("/edit/local_domains").into_response();
     }
@@ -92,7 +92,7 @@ pub async fn save_local_domain(
             if is_htmx_request(&headers) {
                 let entries = get_domains_from_config(&state);
                 let template = LocalDomainsTableTemplate { entries };
-                return Html(template.render().unwrap()).into_response();
+                return super::render_template(template).into_response();
             }
             return Redirect::to("/edit/local_domains").into_response();
         }
@@ -107,7 +107,7 @@ pub async fn save_local_domain(
         if is_htmx_request(&headers) {
             let entries = get_domains_from_config(&state);
             let template = LocalDomainsTableTemplate { entries };
-            return Html(template.render().unwrap()).into_response();
+            return super::render_template(template).into_response();
         }
         return Redirect::to("/edit/local_domains").into_response();
     }
@@ -122,7 +122,7 @@ pub async fn save_local_domain(
             if is_htmx_request(&headers) {
                 let entries = get_domains_from_config(&state);
                 let template = LocalDomainsTableTemplate { entries };
-                Html(template.render().unwrap()).into_response()
+                super::render_template(template).into_response()
             } else {
                 Redirect::to("/edit/local_domains").into_response()
             }
@@ -132,7 +132,7 @@ pub async fn save_local_domain(
             if is_htmx_request(&headers) {
                 let entries = get_domains_from_config(&state);
                 let template = LocalDomainsTableTemplate { entries };
-                Html(template.render().unwrap()).into_response()
+                super::render_template(template).into_response()
             } else {
                 Redirect::to("/edit/local_domains").into_response()
             }
@@ -152,7 +152,7 @@ pub async fn update_local_domain(
             if is_htmx_request(&headers) {
                 let entries = get_domains_from_config(&state);
                 let template = LocalDomainsTableTemplate { entries };
-                return Html(template.render().unwrap()).into_response();
+                return super::render_template(template).into_response();
             }
             return Redirect::to("/edit/local_domains").into_response();
         }
@@ -174,7 +174,7 @@ pub async fn update_local_domain(
                 if is_htmx_request(&headers) {
                     let entries = get_domains_from_config(&state);
                     let template = LocalDomainsTableTemplate { entries };
-                    Html(template.render().unwrap()).into_response()
+                    super::render_template(template).into_response()
                 } else {
                     Redirect::to("/edit/local_domains").into_response()
                 }
@@ -184,7 +184,7 @@ pub async fn update_local_domain(
                 if is_htmx_request(&headers) {
                     let entries = get_domains_from_config(&state);
                     let template = LocalDomainsTableTemplate { entries };
-                    Html(template.render().unwrap()).into_response()
+                    super::render_template(template).into_response()
                 } else {
                     Redirect::to("/edit/local_domains").into_response()
                 }
@@ -195,7 +195,7 @@ pub async fn update_local_domain(
         if is_htmx_request(&headers) {
             let entries = get_domains_from_config(&state);
             let template = LocalDomainsTableTemplate { entries };
-            Html(template.render().unwrap()).into_response()
+            super::render_template(template).into_response()
         } else {
             Redirect::to("/edit/local_domains").into_response()
         }
@@ -214,7 +214,7 @@ pub async fn delete_local_domain(
             if is_htmx_request(&headers) {
                 let entries = get_domains_from_config(&state);
                 let template = LocalDomainsTableTemplate { entries };
-                return Html(template.render().unwrap()).into_response();
+                return super::render_template(template).into_response();
             }
             return Redirect::to("/edit/local_domains").into_response();
         }
@@ -237,7 +237,7 @@ pub async fn delete_local_domain(
                 if is_htmx_request(&headers) {
                     let entries = get_domains_from_config(&state);
                     let template = LocalDomainsTableTemplate { entries };
-                    Html(template.render().unwrap()).into_response()
+                    super::render_template(template).into_response()
                 } else {
                     Redirect::to("/edit/local_domains").into_response()
                 }
@@ -247,7 +247,7 @@ pub async fn delete_local_domain(
                 if is_htmx_request(&headers) {
                     let entries = get_domains_from_config(&state);
                     let template = LocalDomainsTableTemplate { entries };
-                    Html(template.render().unwrap()).into_response()
+                    super::render_template(template).into_response()
                 } else {
                     Redirect::to("/edit/local_domains").into_response()
                 }
@@ -258,7 +258,7 @@ pub async fn delete_local_domain(
         if is_htmx_request(&headers) {
             let entries = get_domains_from_config(&state);
             let template = LocalDomainsTableTemplate { entries };
-            Html(template.render().unwrap()).into_response()
+            super::render_template(template).into_response()
         } else {
             Redirect::to("/edit/local_domains").into_response()
         }

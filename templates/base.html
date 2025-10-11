@@ -45,6 +45,24 @@
             // Update button text when DOM is ready
             document.addEventListener('DOMContentLoaded', updateThemeButton);
         })();
+
+        // Restart button responsive text
+        (function() {
+            function updateRestartButton() {
+                const button = document.getElementById('restart-button');
+                if (button) {
+                    const isMobile = window.innerWidth <= 768;
+                    if (isMobile) {
+                        button.textContent = '🔄\nRestart\nDNS';
+                    } else {
+                        button.textContent = '🔄 Restart DNS';
+                    }
+                }
+            }
+
+            window.addEventListener('resize', updateRestartButton);
+            document.addEventListener('DOMContentLoaded', updateRestartButton);
+        })();
     </script>
 </head>
 <body>
@@ -64,6 +82,15 @@
                         </nav>
                     </div>
                     <div class="theme-toggle-wrapper">
+                        <button
+                            id="restart-button"
+                            hx-post="/restart"
+                            hx-confirm="Are you sure you want to restart the DNS server? This will reload the configuration."
+                            hx-swap="none"
+                            class="restart-button"
+                            title="Restart DNS Server">
+                            🔄 Restart DNS
+                        </button>
                         <button id="theme-toggle" class="theme-toggle" onclick="toggleTheme()">🌙 Dark Mode</button>
                     </div>
                 </div>

@@ -286,6 +286,7 @@ async fn test_process_dns_request_cache_hit() {
 
     // Pre-populate cache
     {
+        #[allow(clippy::unwrap_used)]
         let mut cache_write = cache.write().unwrap();
         cache_write.insert(
             "cached.com",
@@ -351,6 +352,7 @@ async fn test_process_dns_request_upstream_forwarding_success() {
 
     // Verify cache was populated
     {
+        #[allow(clippy::unwrap_used)]
         let cache_read = cache.read().unwrap();
         let cached_addrs = cache_read.get("google.com", TYPE::A);
         assert!(cached_addrs.is_some());
@@ -385,6 +387,7 @@ async fn test_process_dns_request_upstream_forwarding_with_ipv6() {
 
     // Verify IPv6 cache was populated
     {
+        #[allow(clippy::unwrap_used)]
         let cache_read = cache.read().unwrap();
         let cached_addrs = cache_read.get("ipv6.google.com", TYPE::AAAA);
         assert!(cached_addrs.is_some());

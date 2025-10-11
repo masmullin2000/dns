@@ -12,48 +12,135 @@ pub use local_network::{
 };
 pub use nameservers::{delete_nameservers, edit_nameservers, save_nameservers, update_nameservers};
 
+use std::net::SocketAddr;
+
+use crate::config::StartupConfig;
 use askama::Template;
 use axum::{
     Form,
     extract::State,
-    response::{Html, IntoResponse, Redirect},
+    http::StatusCode,
+    response::{Html, IntoResponse, Redirect, Response},
 };
-use lib::config::StartupConfig;
+use axum::{
+    Router,
+    routing::{get, post},
+};
 use serde::Deserialize;
 use std::sync::{Arc, RwLock};
+use tower_http::services::ServeDir;
 use tracing::{error, info};
+
+pub async fn run_web(
+    config: String,
+    dir: String,
+    port: u16,
+    reset_sender: tokio::sync::mpsc::Sender<()>,
+) -> anyhow::Result<()> {
+    // Initialize tracing
+    let app_state = AppState::new(config, reset_sender);
+
+    let static_path = format!("{dir}/static");
+
+    // Build application routes
+    let app = Router::new()
+        .route("/", get(index))
+        .route("/config", get(view_config))
+        .route("/config/edit", get(edit_config))
+        .route("/config/save", post(save_config))
+        .route("/restart", post(restart_dns))
+        .route("/edit/options", get(edit_options))
+        .route("/edit/options/save", post(save_options))
+        .route("/edit/local_network", get(edit_local_network))
+        .route("/edit/local_network/save", post(save_local_network))
+        .route("/edit/local_network/update", post(update_local_network))
+        .route("/edit/local_network/delete", post(delete_local_network))
+        .route("/edit/local_domains", get(edit_local_domains))
+        .route("/edit/local_domains/save", post(save_local_domain))
+        .route("/edit/local_domains/update", post(update_local_domain))
+        .route("/edit/local_domains/delete", post(delete_local_domain))
+        .route("/edit/blocklists", get(edit_blocklists))
+        .route("/edit/blocklists/save", post(save_blocklists))
+        .route("/edit/nameservers", get(edit_nameservers))
+        .route("/edit/nameservers/save", post(save_nameservers))
+        .route("/edit/nameservers/update", post(update_nameservers))
+        .route("/edit/nameservers/delete", post(delete_nameservers))
+        .route("/edit/dot", get(edit_dot))
+        .route("/edit/dot/save", post(save_dot))
+        .route("/edit/dot/update", post(update_dot))
+        .route("/edit/dot/delete", post(delete_dot))
+        .route("/edit/dot/move", post(move_dot))
+        .nest_service("/static", ServeDir::new(static_path))
+        .with_state(app_state);
+
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    info!("DNS Web UI listening on http://{addr}");
+
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}
+
+/// Helper function to render templates with proper error handling
+fn render_template<T: Template>(template: T) -> Response {
+    match template.render() {
+        Ok(html) => Html(html).into_response(),
+        Err(e) => {
+            error!("Template rendering failed: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Template rendering error: {e}"),
+            )
+                .into_response()
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct AppState {
     config_path: Arc<String>,
     config_content: Arc<RwLock<String>>,
+    reset_sender: tokio::sync::mpsc::Sender<()>,
 }
 
 impl AppState {
-    pub fn new(config_path: String) -> Self {
+    #[must_use]
+    pub fn new(config_path: String, reset_sender: tokio::sync::mpsc::Sender<()>) -> Self {
         let content = std::fs::read_to_string(&config_path)
             .unwrap_or_else(|_| String::from("# Failed to load config"));
 
         Self {
             config_path: Arc::new(config_path),
             config_content: Arc::new(RwLock::new(content)),
+            reset_sender,
         }
     }
 
     pub fn reload_config(&self) -> anyhow::Result<()> {
         let content = std::fs::read_to_string(self.config_path.as_ref())?;
-        *self.config_content.write().unwrap() = content;
+        *self
+            .config_content
+            .write()
+            .expect("reload_config: lock is poisoned") = content;
         Ok(())
     }
 
+    #[must_use]
     pub fn get_config(&self) -> String {
-        self.config_content.read().unwrap().clone()
+        self.config_content
+            .read()
+            .expect("get_config: lock is poisoned")
+            .clone()
     }
 
     pub fn save_config(&self, content: &str) -> anyhow::Result<()> {
         info!("Writing config to file: {}", self.config_path.as_ref());
         std::fs::write(self.config_path.as_ref(), content)?;
-        *self.config_content.write().unwrap() = content.to_string();
+        *self
+            .config_content
+            .write()
+            .expect("save_config: lock is poisoned") = content.to_string();
         info!("Config file written successfully");
         Ok(())
     }
@@ -115,7 +202,7 @@ pub async fn index() -> impl IntoResponse {
     let template = IndexTemplate {
         title: "DNS Configuration Manager".to_string(),
     };
-    Html(template.render().unwrap())
+    render_template(template)
 }
 
 pub async fn view_config(State(state): State<AppState>) -> impl IntoResponse {
@@ -126,7 +213,7 @@ pub async fn view_config(State(state): State<AppState>) -> impl IntoResponse {
     let template = ConfigViewTemplate {
         config_content: state.get_config(),
     };
-    Html(template.render().unwrap())
+    render_template(template)
 }
 
 pub async fn edit_config(State(state): State<AppState>) -> impl IntoResponse {
@@ -137,7 +224,7 @@ pub async fn edit_config(State(state): State<AppState>) -> impl IntoResponse {
     let template = ConfigEditTemplate {
         config_content: state.get_config(),
     };
-    Html(template.render().unwrap())
+    render_template(template)
 }
 
 pub async fn save_config(
@@ -156,13 +243,32 @@ pub async fn save_config(
     }
 }
 
+pub async fn restart_dns(State(state): State<AppState>) -> impl IntoResponse {
+    info!("DNS restart requested via web UI");
+
+    if let Err(e) = state.reset_sender.send(()).await {
+        error!("Failed to send restart signal: {e}");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to restart DNS server",
+        )
+            .into_response();
+    }
+
+    (
+        StatusCode::OK,
+        "DNS server restart initiated. Configuration will be reloaded.",
+    )
+        .into_response()
+}
+
 // Options handlers
 pub async fn edit_options(State(state): State<AppState>) -> impl IntoResponse {
     let config = state.parse_config().unwrap_or_default();
     let template = EditOptionsTemplate {
         dot: config.options.dot,
     };
-    Html(template.render().unwrap())
+    render_template(template)
 }
 
 pub async fn save_options(
@@ -206,7 +312,7 @@ pub async fn edit_blocklists(State(state): State<AppState>) -> impl IntoResponse
     let content = config.blocklists.files.unwrap_or_default().join("\n");
 
     let template = EditBlocklistsTemplate { content };
-    Html(template.render().unwrap())
+    render_template(template)
 }
 
 pub async fn save_blocklists(

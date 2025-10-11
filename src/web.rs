@@ -1,16 +1,8 @@
 #![allow(clippy::cognitive_complexity)]
 
-mod web_ui;
-
-use std::net::SocketAddr;
-
-use axum::{
-    Router,
-    routing::{get, post},
-};
 use clap::Parser;
-use tower_http::services::ServeDir;
-use tracing::{Level, info};
+use tracing::Level;
+// use tracing::{Level, error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser)]
@@ -18,6 +10,10 @@ struct Args {
     /// Location of the DNS configuration file
     #[clap(short, long, default_value = "/opt/dns/dns.toml")]
     config: String,
+
+    /// Path to the DNS directory
+    #[clap(short, long, default_value = "/opt/dns/")]
+    directory: String,
 
     /// Port to listen on
     #[clap(short, long, default_value = "3000")]
@@ -40,13 +36,17 @@ fn parse_log_level(level: &str) -> Level {
     }
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
+fn main() -> anyhow::Result<()> {
+    let Args {
+        config,
+        directory,
+        port,
+        log_level,
+    } = Args::parse();
+    let log_level = parse_log_level(&log_level);
 
-    // Initialize tracing
     let filter = tracing_subscriber::EnvFilter::builder()
-        .with_default_directive(parse_log_level(&args.log_level).into())
+        .with_default_directive(log_level.into())
         .from_env_lossy();
 
     tracing_subscriber::registry()
@@ -54,55 +54,13 @@ async fn main() -> anyhow::Result<()> {
         .with(filter)
         .init();
 
-    let app_state = web_ui::AppState::new(args.config);
+    let (tx, _rx) = tokio::sync::mpsc::channel(1);
 
-    // Build application routes
-    let app = Router::new()
-        .route("/", get(web_ui::index))
-        .route("/config", get(web_ui::view_config))
-        .route("/config/edit", get(web_ui::edit_config))
-        .route("/config/save", post(web_ui::save_config))
-        .route("/edit/options", get(web_ui::edit_options))
-        .route("/edit/options/save", post(web_ui::save_options))
-        .route("/edit/local_network", get(web_ui::edit_local_network))
-        .route("/edit/local_network/save", post(web_ui::save_local_network))
-        .route(
-            "/edit/local_network/update",
-            post(web_ui::update_local_network),
-        )
-        .route(
-            "/edit/local_network/delete",
-            post(web_ui::delete_local_network),
-        )
-        .route("/edit/local_domains", get(web_ui::edit_local_domains))
-        .route("/edit/local_domains/save", post(web_ui::save_local_domain))
-        .route(
-            "/edit/local_domains/update",
-            post(web_ui::update_local_domain),
-        )
-        .route(
-            "/edit/local_domains/delete",
-            post(web_ui::delete_local_domain),
-        )
-        .route("/edit/blocklists", get(web_ui::edit_blocklists))
-        .route("/edit/blocklists/save", post(web_ui::save_blocklists))
-        .route("/edit/nameservers", get(web_ui::edit_nameservers))
-        .route("/edit/nameservers/save", post(web_ui::save_nameservers))
-        .route("/edit/nameservers/update", post(web_ui::update_nameservers))
-        .route("/edit/nameservers/delete", post(web_ui::delete_nameservers))
-        .route("/edit/dot", get(web_ui::edit_dot))
-        .route("/edit/dot/save", post(web_ui::save_dot))
-        .route("/edit/dot/update", post(web_ui::update_dot))
-        .route("/edit/dot/delete", post(web_ui::delete_dot))
-        .route("/edit/dot/move", post(web_ui::move_dot))
-        .nest_service("/static", ServeDir::new("static"))
-        .with_state(app_state);
-
-    let addr = SocketAddr::from(([0, 0, 0, 0], args.port));
-    info!("DNS Web UI listening on http://{addr}");
-
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()?;
+    rt.block_on(async { lib::run_web(config, directory, port, tx).await })?;
 
     Ok(())
 }

@@ -12,6 +12,7 @@ use tokio::{
     sync::mpsc::channel as AsyncChannel,
     time::timeout,
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::{
@@ -160,7 +161,9 @@ async fn dot_query(
                 .inspect_err(|e| warn!("Failed to establish DoT connection to {host}:{port}: {e}"))
         };
 
+        #[allow(clippy::unwrap_used)]
         let get_conn = || POOL.lock().unwrap().get_connection(server);
+        #[allow(clippy::unwrap_used)]
         let put_conn = |conn| POOL.lock().unwrap().return_connection(server, conn);
 
         let value = get_conn();
@@ -359,7 +362,6 @@ where
 
     let (Ok((ns, response_data)), _, _) = select_all(futures).await else {
         return Ok(dns_fail(&pkt, dns::RCODE::ServerFailure));
-        // anyhow::bail!("Failed to get a response from any nameserver");
     };
     _ = cache_dns_packet(&response_data, dns_start_location, cache, client_addr)
         .inspect(|()| debug!("Received DNS response from {ns}"))
@@ -370,6 +372,7 @@ where
 pub fn udp_server(
     config: Arc<RuntimeConfig>,
     cache: Arc<RwLock<dns_cache::Cache>>,
+    shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
     let remote_sock = Arc::new(udp_sock(ADDR)?);
     let local_sock = Arc::new(udp_sock(LOCAL_ADDR)?);
@@ -388,58 +391,70 @@ pub fn udp_server(
         Ok(rec_buf)
     };
 
-    tokio::spawn(async move {
-        while let Some(channel_data) = rx.recv().await {
-            let config = config.clone();
-            let cache = cache.clone();
-            tokio::spawn(async move {
-                let bytes = channel_data.bytes;
-                let addr = channel_data.addr;
-                let sock = channel_data.sock;
+    tokio::spawn({
+        let shutdown = shutdown.clone();
+        async move {
+            loop {
+                tokio::select! {
+                    () = shutdown.cancelled() => {
+                        info!("UDP worker shutting down");
+                        break;
+                    }
+                    channel_data = rx.recv() => {
+                        let Some(channel_data) = channel_data else {
+                            break;
+                        };
+                        let config = config.clone();
+                        let cache = cache.clone();
+                        tokio::spawn(async move {
+                            let ChannelData { bytes, addr, sock } = channel_data;
 
-                if let Ok(reply_data) =
-                    process_dns_request(&addr, &config, &cache, bytes, 0, get_data).await
-                {
-                    _ = sock.send_to(&reply_data, &addr).await.inspect_err(|e| {
-                        error!("Failed to send DNS packet to {addr}: {e}");
-                    });
-                } else {
-                    debug!("No reply data for {addr}");
+                            if let Ok(reply_data) =
+                                process_dns_request(&addr, &config, &cache, bytes, 0, get_data).await
+                            {
+                                _ = sock.send_to(&reply_data, &addr).await.inspect_err(|e| {
+                                    error!("Failed to send DNS packet to {addr}: {e}");
+                                });
+                            } else {
+                                debug!("No reply data for {addr}");
+                            }
+                        });
+                    }
                 }
-            });
+            }
         }
     });
 
-    let recv_loop = |sock: Arc<tokio::net::UdpSocket>, tx: Sender| async move {
+    let recv_loop = |sock: Arc<tokio::net::UdpSocket>, tx: Sender, shutdown: CancellationToken| async move {
         let mut buf = vec![0u8; MAX_PKT_SIZE];
         loop {
-            let Ok((sz, addr)) = sock
-                .recv_from(&mut buf)
-                .await
-                .inspect(|(_, addr)| trace!("Received UDP DNS request from {addr}"))
-                .inspect_err(|e| {
-                    error!("Failed to receive DNS packet: {e}");
-                })
-            else {
-                continue;
-            };
+            tokio::select! {
+                () = shutdown.cancelled() => {
+                    info!("UDP receiver shutting down");
+                    break;
+                }
+                result = sock.recv_from(&mut buf) => {
+                    let Ok((sz, addr)) = result
+                        .inspect(|(_, addr)| trace!("Received UDP DNS request from {addr}"))
+                        .inspect_err(|e| {
+                            error!("Failed to receive DNS packet: {e}");
+                        })
+                    else {
+                        continue;
+                    };
 
-            // if addr.ip() != IpAddr::V4(Ipv4Addr::from_str("172.16.0.3").unwrap()) && addr.ip() != IpAddr::V4(Ipv4Addr::from_str("172.16.0.1").unwrap())
-            // {
-            //     trace!("Ignoring DNS request from unspecified address: {addr}");
-            //     continue;
-            // } else {
-            //     debug!("received udp dns from {addr}: {buf:?}");
-            // }
-            let buf = buf[..sz].to_vec();
-            if let Err(e) = tx.send(ChannelData::new(buf, addr, sock.clone())).await {
-                panic!("{sock:?} channel send failed: {e}");
+                    let buf = buf[..sz].to_vec();
+                    if let Err(e) = tx.send(ChannelData::new(buf, addr, sock.clone())).await {
+                        error!("{sock:?} channel send failed: {e}");
+                        break;
+                    }
+                }
             }
         }
     };
 
-    tokio::spawn(recv_loop(remote_sock, tx.clone()));
-    tokio::spawn(recv_loop(local_sock, tx));
+    tokio::spawn(recv_loop(remote_sock, tx.clone(), shutdown.clone()));
+    tokio::spawn(recv_loop(local_sock, tx, shutdown));
 
     Ok(())
 }
@@ -447,6 +462,7 @@ pub fn udp_server(
 pub async fn tcp_server(
     config: Arc<RuntimeConfig>,
     cache: Arc<RwLock<dns_cache::Cache>>,
+    shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
     let sock = tokio::net::TcpListener::bind(ADDR)
         .await
@@ -467,65 +483,85 @@ pub async fn tcp_server(
         Ok(rec_buf)
     };
 
+    let shutdown_worker = shutdown.clone();
     tokio::spawn(async move {
-        while let Some((bytes, mut sock)) = rx.recv().await {
-            let config = config.clone();
-            let cache = cache.clone();
-            let peer = sock.peer_addr().expect("Failed to get peer address");
-            tokio::spawn(async move {
-                if let Ok(reply_data) = process_dns_request(
-                    &peer,
-                    &config,
-                    &cache,
-                    bytes,
-                    TCP_DNS_LEN_BYTES_SZ,
-                    get_data,
-                )
-                .await
-                    && let Err(e) = sock.write_all(&reply_data).await
-                {
-                    error!("Failed to send DNS packet to {sock:?}: {e}");
+        loop {
+            tokio::select! {
+                () = shutdown_worker.cancelled() => {
+                    info!("TCP worker shutting down");
+                    break;
                 }
-            });
+                message = rx.recv() => {
+                    let Some((bytes, mut sock)) = message else {
+                        break;
+                    };
+                    let config = config.clone();
+                    let cache = cache.clone();
+                    let peer = sock.peer_addr().expect("Failed to get peer address");
+                    tokio::spawn(async move {
+                        if let Ok(reply_data) = process_dns_request(
+                            &peer,
+                            &config,
+                            &cache,
+                            bytes,
+                            TCP_DNS_LEN_BYTES_SZ,
+                            get_data,
+                        )
+                        .await
+                            && let Err(e) = sock.write_all(&reply_data).await
+                        {
+                            error!("Failed to send DNS packet to {sock:?}: {e}");
+                        }
+                    });
+                }
+            }
         }
     });
 
-    let recv_loop = |r_sock: tokio::net::TcpListener, tx: TcpSender| async move {
-        loop {
-            let Ok((mut sock, _)) = r_sock
-                .accept()
-                .await
-                .inspect(|(_, addr)| debug!("Received TCP DNS request from {addr}"))
-                .inspect_err(|e| {
-                    error!("Failed to accept TCP connection: {e}");
-                })
-            else {
-                continue;
-            };
+    let recv_loop =
+        |r_sock: tokio::net::TcpListener, tx: TcpSender, shutdown: CancellationToken| async move {
+            loop {
+                tokio::select! {
+                () = shutdown.cancelled() => {
+                        info!("TCP receiver shutting down");
+                        break;
+                    }
+                    result = r_sock.accept() => {
+                        let Ok((mut sock, _)) = result
+                            .inspect(|(_, addr)| debug!("Received TCP DNS request from {addr}"))
+                            .inspect_err(|e| {
+                                error!("Failed to accept TCP connection: {e}");
+                            })
+                        else {
+                            continue;
+                        };
 
-            let sock_addr = sock
-                .peer_addr()
-                .map_or_else(|_| "unknown socket".to_string(), |a| a.to_string());
+                        let sock_addr = sock
+                            .peer_addr()
+                            .map_or_else(|_| "unknown socket".to_string(), |a| a.to_string());
 
-            let buf = match timeout(WAIT_FOR_DNS_REQ, Box::pin(sock.read_dns())).await {
-                Ok(Ok(buf)) => buf,
-                Ok(Err(e)) => {
-                    error!("Failed to read from TCP socket: {sock_addr} - {e}");
-                    continue;
+                        let buf = match timeout(WAIT_FOR_DNS_REQ, Box::pin(sock.read_dns())).await {
+                            Ok(Ok(buf)) => buf,
+                            Ok(Err(e)) => {
+                                error!("Failed to read from TCP socket: {sock_addr} - {e}");
+                                continue;
+                            }
+                            Err(_) => {
+                                warn!("Timeout while waiting for data on TCP socket: {sock_addr}");
+                                continue;
+                            }
+                        };
+
+                        if let Err(e) = tx.send((buf, sock)).await {
+                            error!("channel send failed: {e}");
+                            break;
+                        }
+                    }
                 }
-                Err(_) => {
-                    warn!("Timeout while waiting for data on TCP socket: {sock_addr}");
-                    continue;
-                }
-            };
-
-            if let Err(e) = tx.send((buf, sock)).await {
-                panic!("channel send failed: {e}");
             }
-        }
-    };
+        };
 
-    tokio::spawn(recv_loop(sock, tx));
+    tokio::spawn(recv_loop(sock, tx, shutdown));
     Ok(())
 }
 

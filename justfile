@@ -22,7 +22,7 @@ run opt="dev" target="musl" triple=(arch() + "-unknown-linux"):
 
 # Run clippy linter with pedantic/nursery lints
 clippy type="stable":
-    cargo +{{type}} clippy -- -D clippy::pedantic -D clippy::nursery
+    cargo +{{type}} clippy -- -D clippy::pedantic -D clippy::nursery -D clippy::unwrap-used
 
 # Run full pre-commit checks (clean, check, fmt, clippy, test)
 pre: clean check fmt clippy test

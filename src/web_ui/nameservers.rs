@@ -3,7 +3,7 @@ use axum::{
     Form,
     extract::State,
     http::HeaderMap,
-    response::{Html, IntoResponse, Redirect},
+    response::{IntoResponse, Redirect},
 };
 use serde::Deserialize;
 use tracing::{error, info};
@@ -67,7 +67,7 @@ pub async fn edit_nameservers(State(state): State<AppState>) -> impl IntoRespons
         .collect();
 
     let template = EditNameserversTemplate { entries };
-    Html(template.render().unwrap())
+    super::render_template(template)
 }
 
 pub async fn save_nameservers(
@@ -84,7 +84,7 @@ pub async fn save_nameservers(
         if is_htmx_request(&headers) {
             let entries = get_entries_from_config(&state);
             let template = NameserversTableTemplate { entries };
-            return Html(template.render().unwrap()).into_response();
+            return super::render_template(template).into_response();
         }
         return Redirect::to("/edit/nameservers").into_response();
     }
@@ -96,7 +96,7 @@ pub async fn save_nameservers(
             if is_htmx_request(&headers) {
                 let entries = get_entries_from_config(&state);
                 let template = NameserversTableTemplate { entries };
-                return Html(template.render().unwrap()).into_response();
+                return super::render_template(template).into_response();
             }
             return Redirect::to("/edit/nameservers").into_response();
         }
@@ -113,7 +113,7 @@ pub async fn save_nameservers(
         if is_htmx_request(&headers) {
             let entries = get_entries_from_config(&state);
             let template = NameserversTableTemplate { entries };
-            return Html(template.render().unwrap()).into_response();
+            return super::render_template(template).into_response();
         }
         return Redirect::to("/edit/nameservers").into_response();
     }
@@ -127,7 +127,7 @@ pub async fn save_nameservers(
             if is_htmx_request(&headers) {
                 let entries = get_entries_from_config(&state);
                 let template = NameserversTableTemplate { entries };
-                Html(template.render().unwrap()).into_response()
+                super::render_template(template).into_response()
             } else {
                 Redirect::to("/edit/nameservers").into_response()
             }
@@ -137,7 +137,7 @@ pub async fn save_nameservers(
             if is_htmx_request(&headers) {
                 let entries = get_entries_from_config(&state);
                 let template = NameserversTableTemplate { entries };
-                Html(template.render().unwrap()).into_response()
+                super::render_template(template).into_response()
             } else {
                 Redirect::to("/edit/nameservers").into_response()
             }
@@ -157,7 +157,7 @@ pub async fn update_nameservers(
             if is_htmx_request(&headers) {
                 let entries = get_entries_from_config(&state);
                 let template = NameserversTableTemplate { entries };
-                return Html(template.render().unwrap()).into_response();
+                return super::render_template(template).into_response();
             }
             return Redirect::to("/edit/nameservers").into_response();
         }
@@ -179,7 +179,7 @@ pub async fn update_nameservers(
                 if is_htmx_request(&headers) {
                     let entries = get_entries_from_config(&state);
                     let template = NameserversTableTemplate { entries };
-                    Html(template.render().unwrap()).into_response()
+                    super::render_template(template).into_response()
                 } else {
                     Redirect::to("/edit/nameservers").into_response()
                 }
@@ -189,7 +189,7 @@ pub async fn update_nameservers(
                 if is_htmx_request(&headers) {
                     let entries = get_entries_from_config(&state);
                     let template = NameserversTableTemplate { entries };
-                    Html(template.render().unwrap()).into_response()
+                    super::render_template(template).into_response()
                 } else {
                     Redirect::to("/edit/nameservers").into_response()
                 }
@@ -200,7 +200,7 @@ pub async fn update_nameservers(
         if is_htmx_request(&headers) {
             let entries = get_entries_from_config(&state);
             let template = NameserversTableTemplate { entries };
-            Html(template.render().unwrap()).into_response()
+            super::render_template(template).into_response()
         } else {
             Redirect::to("/edit/nameservers").into_response()
         }
@@ -219,7 +219,7 @@ pub async fn delete_nameservers(
             if is_htmx_request(&headers) {
                 let entries = get_entries_from_config(&state);
                 let template = NameserversTableTemplate { entries };
-                return Html(template.render().unwrap()).into_response();
+                return super::render_template(template).into_response();
             }
             return Redirect::to("/edit/nameservers").into_response();
         }
@@ -233,7 +233,7 @@ pub async fn delete_nameservers(
                 if is_htmx_request(&headers) {
                     let entries = get_entries_from_config(&state);
                     let template = NameserversTableTemplate { entries };
-                    Html(template.render().unwrap()).into_response()
+                    super::render_template(template).into_response()
                 } else {
                     Redirect::to("/edit/nameservers").into_response()
                 }
@@ -243,7 +243,7 @@ pub async fn delete_nameservers(
                 if is_htmx_request(&headers) {
                     let entries = get_entries_from_config(&state);
                     let template = NameserversTableTemplate { entries };
-                    Html(template.render().unwrap()).into_response()
+                    super::render_template(template).into_response()
                 } else {
                     Redirect::to("/edit/nameservers").into_response()
                 }
@@ -254,7 +254,7 @@ pub async fn delete_nameservers(
         if is_htmx_request(&headers) {
             let entries = get_entries_from_config(&state);
             let template = NameserversTableTemplate { entries };
-            Html(template.render().unwrap()).into_response()
+            super::render_template(template).into_response()
         } else {
             Redirect::to("/edit/nameservers").into_response()
         }

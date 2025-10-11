@@ -3,10 +3,12 @@ use axum::{
     Form,
     extract::State,
     http::HeaderMap,
-    response::{Html, IntoResponse, Redirect},
+    response::{IntoResponse, Redirect},
 };
 use serde::Deserialize;
 use tracing::{error, info};
+
+use crate::config;
 
 use super::AppState;
 
@@ -77,7 +79,7 @@ struct DotServerEntry {
 pub async fn edit_dot(State(state): State<AppState>) -> impl IntoResponse {
     let entries = get_dot_servers_from_config(&state);
     let template = EditDotTemplate { entries };
-    Html(template.render().unwrap())
+    super::render_template(template)
 }
 
 pub async fn save_dot(
@@ -98,7 +100,7 @@ pub async fn save_dot(
         if is_htmx_request(&headers) {
             let entries = get_dot_servers_from_config(&state);
             let template = DotTableTemplate { entries };
-            return Html(template.render().unwrap()).into_response();
+            return super::render_template(template).into_response();
         }
         return Redirect::to("/edit/dot").into_response();
     }
@@ -110,7 +112,7 @@ pub async fn save_dot(
             if is_htmx_request(&headers) {
                 let entries = get_dot_servers_from_config(&state);
                 let template = DotTableTemplate { entries };
-                return Html(template.render().unwrap()).into_response();
+                return super::render_template(template).into_response();
             }
             return Redirect::to("/edit/dot").into_response();
         }
@@ -123,7 +125,7 @@ pub async fn save_dot(
             if is_htmx_request(&headers) {
                 let entries = get_dot_servers_from_config(&state);
                 let template = DotTableTemplate { entries };
-                return Html(template.render().unwrap()).into_response();
+                return super::render_template(template).into_response();
             }
             return Redirect::to("/edit/dot").into_response();
         }
@@ -138,12 +140,12 @@ pub async fn save_dot(
         if is_htmx_request(&headers) {
             let entries = get_dot_servers_from_config(&state);
             let template = DotTableTemplate { entries };
-            return Html(template.render().unwrap()).into_response();
+            return super::render_template(template).into_response();
         }
         return Redirect::to("/edit/dot").into_response();
     }
 
-    servers.push(lib::config::DotServer {
+    servers.push(config::DotServer {
         hostname: hostname.to_string(),
         ip,
         port: form.port,
@@ -157,7 +159,7 @@ pub async fn save_dot(
             if is_htmx_request(&headers) {
                 let entries = get_dot_servers_from_config(&state);
                 let template = DotTableTemplate { entries };
-                Html(template.render().unwrap()).into_response()
+                super::render_template(template).into_response()
             } else {
                 Redirect::to("/edit/dot").into_response()
             }
@@ -167,7 +169,7 @@ pub async fn save_dot(
             if is_htmx_request(&headers) {
                 let entries = get_dot_servers_from_config(&state);
                 let template = DotTableTemplate { entries };
-                Html(template.render().unwrap()).into_response()
+                super::render_template(template).into_response()
             } else {
                 Redirect::to("/edit/dot").into_response()
             }
@@ -187,7 +189,7 @@ pub async fn update_dot(
             if is_htmx_request(&headers) {
                 let entries = get_dot_servers_from_config(&state);
                 let template = DotTableTemplate { entries };
-                return Html(template.render().unwrap()).into_response();
+                return super::render_template(template).into_response();
             }
             return Redirect::to("/edit/dot").into_response();
         }
@@ -198,7 +200,7 @@ pub async fn update_dot(
     // Find and update the server
     if let Some(pos) = servers.iter().position(|s| s.hostname == form.old_hostname) {
         if let Ok(ip) = form.new_ip.parse() {
-            servers[pos] = lib::config::DotServer {
+            servers[pos] = config::DotServer {
                 hostname: form.new_hostname.clone(),
                 ip,
                 port: form.new_port,
@@ -214,7 +216,7 @@ pub async fn update_dot(
                     if is_htmx_request(&headers) {
                         let entries = get_dot_servers_from_config(&state);
                         let template = DotTableTemplate { entries };
-                        Html(template.render().unwrap()).into_response()
+                        super::render_template(template).into_response()
                     } else {
                         Redirect::to("/edit/dot").into_response()
                     }
@@ -224,7 +226,7 @@ pub async fn update_dot(
                     if is_htmx_request(&headers) {
                         let entries = get_dot_servers_from_config(&state);
                         let template = DotTableTemplate { entries };
-                        Html(template.render().unwrap()).into_response()
+                        super::render_template(template).into_response()
                     } else {
                         Redirect::to("/edit/dot").into_response()
                     }
@@ -235,7 +237,7 @@ pub async fn update_dot(
             if is_htmx_request(&headers) {
                 let entries = get_dot_servers_from_config(&state);
                 let template = DotTableTemplate { entries };
-                Html(template.render().unwrap()).into_response()
+                super::render_template(template).into_response()
             } else {
                 Redirect::to("/edit/dot").into_response()
             }
@@ -245,7 +247,7 @@ pub async fn update_dot(
         if is_htmx_request(&headers) {
             let entries = get_dot_servers_from_config(&state);
             let template = DotTableTemplate { entries };
-            Html(template.render().unwrap()).into_response()
+            super::render_template(template).into_response()
         } else {
             Redirect::to("/edit/dot").into_response()
         }
@@ -264,7 +266,7 @@ pub async fn delete_dot(
             if is_htmx_request(&headers) {
                 let entries = get_dot_servers_from_config(&state);
                 let template = DotTableTemplate { entries };
-                return Html(template.render().unwrap()).into_response();
+                return super::render_template(template).into_response();
             }
             return Redirect::to("/edit/dot").into_response();
         }
@@ -290,7 +292,7 @@ pub async fn delete_dot(
                 if is_htmx_request(&headers) {
                     let entries = get_dot_servers_from_config(&state);
                     let template = DotTableTemplate { entries };
-                    Html(template.render().unwrap()).into_response()
+                    super::render_template(template).into_response()
                 } else {
                     Redirect::to("/edit/dot").into_response()
                 }
@@ -300,7 +302,7 @@ pub async fn delete_dot(
                 if is_htmx_request(&headers) {
                     let entries = get_dot_servers_from_config(&state);
                     let template = DotTableTemplate { entries };
-                    Html(template.render().unwrap()).into_response()
+                    super::render_template(template).into_response()
                 } else {
                     Redirect::to("/edit/dot").into_response()
                 }
@@ -311,7 +313,7 @@ pub async fn delete_dot(
         if is_htmx_request(&headers) {
             let entries = get_dot_servers_from_config(&state);
             let template = DotTableTemplate { entries };
-            Html(template.render().unwrap()).into_response()
+            super::render_template(template).into_response()
         } else {
             Redirect::to("/edit/dot").into_response()
         }
@@ -330,7 +332,7 @@ pub async fn move_dot(
             if is_htmx_request(&headers) {
                 let entries = get_dot_servers_from_config(&state);
                 let template = DotTableTemplate { entries };
-                return Html(template.render().unwrap()).into_response();
+                return super::render_template(template).into_response();
             }
             return Redirect::to("/edit/dot").into_response();
         }
@@ -366,7 +368,7 @@ pub async fn move_dot(
                     if is_htmx_request(&headers) {
                         let entries = get_dot_servers_from_config(&state);
                         let template = DotTableTemplate { entries };
-                        Html(template.render().unwrap()).into_response()
+                        super::render_template(template).into_response()
                     } else {
                         Redirect::to("/edit/dot").into_response()
                     }
@@ -376,7 +378,7 @@ pub async fn move_dot(
                     if is_htmx_request(&headers) {
                         let entries = get_dot_servers_from_config(&state);
                         let template = DotTableTemplate { entries };
-                        Html(template.render().unwrap()).into_response()
+                        super::render_template(template).into_response()
                     } else {
                         Redirect::to("/edit/dot").into_response()
                     }
@@ -387,7 +389,7 @@ pub async fn move_dot(
             if is_htmx_request(&headers) {
                 let entries = get_dot_servers_from_config(&state);
                 let template = DotTableTemplate { entries };
-                Html(template.render().unwrap()).into_response()
+                super::render_template(template).into_response()
             } else {
                 Redirect::to("/edit/dot").into_response()
             }
@@ -397,7 +399,7 @@ pub async fn move_dot(
         if is_htmx_request(&headers) {
             let entries = get_dot_servers_from_config(&state);
             let template = DotTableTemplate { entries };
-            Html(template.render().unwrap()).into_response()
+            super::render_template(template).into_response()
         } else {
             Redirect::to("/edit/dot").into_response()
         }
