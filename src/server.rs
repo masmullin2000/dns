@@ -15,7 +15,7 @@ use tokio::{
 use tracing::{debug, error, info, trace, warn};
 
 use crate::{
-    config::RuntimeConfig,
+    config::{DotEnabled, RuntimeConfig},
     dns_cache,
     dot_client::{self, DotPool},
 };
@@ -324,18 +324,20 @@ where
         }
     }
 
-    // Try DoT servers first if available
-    if let Ok(Some((ns, response))) = dot_query(config, &bytes, dns_start_location).await {
-        _ = cache_dns_packet(&response, dns_start_location, cache, client_addr)
-            .inspect(|()| debug!("Received DNS response from DoT {ns}"))
-            .inspect_err(|e| error!("Failed to parse DNS packet: {e}"));
+    // Try DoT servers first if enabled
+    if config.dot != DotEnabled::Off {
+        if let Ok(Some((ns, response))) = dot_query(config, &bytes, dns_start_location).await {
+            _ = cache_dns_packet(&response, dns_start_location, cache, client_addr)
+                .inspect(|()| debug!("Received DNS response from DoT {ns}"))
+                .inspect_err(|e| error!("Failed to parse DNS packet: {e}"));
 
-        return Ok(response);
-    }
+            return Ok(response);
+        }
 
-    if config.force_dot {
-        return Ok(dns_fail(&pkt, dns::RCODE::ServerFailure));
-        // anyhow::bail!("All DoT servers failed and force_dot is enabled");
+        // If DoT is forced and all servers failed, return error
+        if config.dot == DotEnabled::Force{
+            return Ok(dns_fail(&pkt, dns::RCODE::ServerFailure));
+        }
     }
 
     // Fallback to plain DNS

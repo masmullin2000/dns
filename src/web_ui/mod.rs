@@ -95,12 +95,12 @@ pub struct ConfigForm {
 #[derive(Template)]
 #[template(path = "edit_options.html")]
 struct EditOptionsTemplate {
-    force_dot: bool,
+    dot: String,
 }
 
 #[derive(Deserialize)]
 pub struct OptionsForm {
-    force_dot: Option<String>,
+    dot: String,
 }
 
 
@@ -166,7 +166,7 @@ pub async fn save_config(
 pub async fn edit_options(State(state): State<AppState>) -> impl IntoResponse {
     let config = state.parse_config().unwrap_or_default();
     let template = EditOptionsTemplate {
-        force_dot: config.options.force_dot,
+        dot: config.options.dot,
     };
     Html(template.render().unwrap())
 }
@@ -183,7 +183,16 @@ pub async fn save_options(
         }
     };
 
-    config.options.force_dot = form.force_dot.is_some();
+    // Validate the dot setting
+    let dot_value = match form.dot.as_str() {
+        "off" | "on" | "force" => form.dot,
+        _ => {
+            error!("Invalid dot setting: {}", form.dot);
+            return Redirect::to("/edit/options");
+        }
+    };
+
+    config.options.dot = dot_value;
 
     match state.update_config(&config) {
         Ok(()) => {

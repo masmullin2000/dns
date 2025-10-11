@@ -6,19 +6,19 @@
 <div class="table-container">
     <h2>Edit DNS-over-TLS Servers</h2>
 
-    <p class="local-network-description">
+    <p class="dot-description">
         Configure DNS-over-TLS (DoT) servers for encrypted DNS queries. Each server requires a hostname, IP address, and port (typically 853).
     </p>
 
     <h3>Add New DoT Server</h3>
     <form id="add-dot-entry-form" hx-post="/edit/dot/save" hx-target="#table-container" hx-swap="innerHTML">
         <div class="responsive-table-wrapper table-container">
-        <table class="local-network-add-form">
+        <table class="dot-add-form">
         <colgroup>
             <col class="col-hostname">
             <col class="col-ip">
             <col class="col-port">
-            <col class="col-port">
+            <!-- <col class="col-port"> -->
             <col class="col-action-single">
             <col class="col-action-single">
         </colgroup>
@@ -26,7 +26,7 @@
             <tr>
                 <th class="col-hostname table-cell">Hostname</th>
                 <th class="col-ip table-cell">IP Address</th>
-                <th colspan="2" class="col-port table-cell">Port</th>
+                <th class="col-port table-cell">Port</th>
                 <th colspan="2" class="col-action-single table-cell action-col">Action</th>
             </tr>
         </thead>
@@ -38,10 +38,9 @@
                 <td class="col-ip table-cell">
                     <input type="text" name="ip" placeholder="e.g., 1.1.1.1" required>
                 </td>
-                <td colspan="2" class="col-port table-cell">
+                <td class="col-port table-cell">
                     <input type="number" name="port" value="853" min="1" max="65535" required>
                 </td>
-                <!-- <td class="col-port table-cell"></td> -->
                 <td colspan="2" class="col-action-single table-cell action-col">
                     <button type="submit" class="btn">Add</button>
                 </td>
@@ -74,9 +73,25 @@
 </div>
 
 <script>
+// Function to add word break opportunities after periods in hostnames
+function addHostnameWrapping() {
+    const hostnameSpans = document.querySelectorAll('.hostname-wrap');
+    hostnameSpans.forEach(span => {
+        if (!span.dataset.wrapped) {
+            const text = span.textContent;
+            const wrappedText = text.replace(/\./g, '.<wbr>');
+            span.innerHTML = wrappedText;
+            span.dataset.wrapped = 'true';
+        }
+    });
+}
+
 // Ensure script runs after DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
-    // Listen for HTMX after swap to reset the form
+    // Add wrapping on initial load
+    addHostnameWrapping();
+
+    // Listen for HTMX after swap to reset the form and re-apply wrapping
     document.body.addEventListener('htmx:afterSwap', function(event) {
         if (event.detail.target.id === 'table-container') {
             const form = document.getElementById('add-dot-entry-form');
@@ -88,6 +103,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     portInput.value = '853';
                 }
             }
+            // Re-apply hostname wrapping after HTMX swap
+            addHostnameWrapping();
         }
     });
 });

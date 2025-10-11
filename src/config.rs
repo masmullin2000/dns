@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::block_filter::{BlockFilter, BlockFilterBuilder};
 
@@ -23,8 +23,33 @@ pub struct StartupConfig {
 
 #[derive(Deserialize, serde::Serialize, Default, Debug)]
 pub struct Options {
-    #[serde(default = "bool::default")]
-    pub force_dot: bool,
+    #[serde(default = "default_dot")]
+    pub dot: String,
+}
+
+fn default_dot() -> String {
+    "on".to_string()
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum DotEnabled {
+    Off,
+    On,
+    Force,
+}
+
+impl From<&str> for DotEnabled {
+    fn from(value: &str) -> Self {
+        match value {
+            "off" => Self::Off,
+            "on" => Self::On,
+            "force" => Self::Force,
+            _ => {
+                warn!("Invalid DoT option: {value}, defaulting to 'on'");
+                Self::On
+            }
+        }
+    }
 }
 
 // #[derive(Debug)]
@@ -34,7 +59,7 @@ pub struct RuntimeConfig {
     pub block_filter: BlockFilter,
     pub nameservers: Vec<std::net::SocketAddr>,
     pub dot_servers: Vec<DotServer>,
-    pub force_dot: bool,
+    pub dot: DotEnabled,
     pub tls_config: Arc<rustls::ClientConfig>,
 }
 
@@ -186,7 +211,7 @@ impl From<StartupConfig> for RuntimeConfig {
             block_filter,
             nameservers,
             dot_servers,
-            force_dot: startup.options.force_dot,
+            dot: startup.options.dot.as_str().into(),
             tls_config: Arc::new(tls_config),
         }
     }

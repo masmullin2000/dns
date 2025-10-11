@@ -8,16 +8,20 @@ deb11 = "172.16.1.10"
 deb12 = "172.16.1.11"
 dns = "172.16.0.2"
 fd = "172.16.1.150"
-game = "172.16.250.5"
-jelly = "172.16.50.105"
+fed = "172.16.10.101"
+game = "172.16.100.1"
+jelly = "172.16.20.107"
 jup = "172.16.0.3"
 nas = "172.16.50.3"
+nas-vm = "172.16.20.1"
 ol7 = "172.16.1.42"
 ol8 = "172.16.1.40"
 ol86 = "172.16.1.44"
 ol87 = "172.16.1.45"
 ol9 = "172.16.1.41"
 ol9sec = "172.16.1.43"
+old-jelly = "172.16.50.105"
+opn = "172.16.0.1"
 os154 = "172.16.1.82"
 os155 = "172.16.1.80"
 os156 = "172.16.1.81"
@@ -28,27 +32,33 @@ rhel84 = "172.16.1.56"
 rhel86 = "172.16.1.55"
 rhel9 = "172.16.1.51"
 rocky8 = "172.16.1.53"
-router = "172.16.0.1"
+router = "192.168.0.1"
 sles4 = "172.16.1.92"
 sles5 = "172.16.1.91"
 sles6 = "172.16.1.90"
 sles7 = "172.16.1.93"
-store = "172.16.250.3"
-torrent = "172.16.50.106"
+torrent = "172.16.20.109"
 "tplinkwifi.net" = "172.16.1.1"
+truenas = "172.16.20.2"
 ub22 = "172.16.1.70"
 ub24 = "172.16.1.71"
-vms = "172.16.5.3"
+vms = "172.16.10.1"
+w10_work = "172.16.50.4"
 w11_home = "172.16.50.3"
+wifi = "172.16.1.1"
 work = "172.16.1.3"
 x13s = "172.16.100.100"
-xdns = "172.16.0.254"
 
 [nameservers]
 ip4 = [
-    "1.1.1.1",
     "9.9.9.9",
+    "1.1.1.1",
 ]
+
+[[nameservers.dot]]
+hostname = "protected.canadianshield.cira.ca"
+port = 853
+ip = "149.112.122.20"
 
 [[nameservers.dot]]
 hostname = "dns.quad9.net"
@@ -60,11 +70,6 @@ hostname = "cloudflare-dns.com"
 port = 853
 ip = "1.1.1.1"
 
-[[nameservers.dot]]
-hostname = "google.com"
-port = 853
-ip = "8.8.8.8"
-
 [local_domains]
 domains = [
     "local",
@@ -74,11 +79,11 @@ domains = [
 
 [blocklists]
 files = [
-    "./hagezi.list",
-    "./oisd.list",
-    "./steve.list",
-    "./mine.list",
+    "/opt/dns/hagezi.list",
+    "/opt/dns/oisd.list",
+    "/opt/dns/steve.list",
+    "/opt/dns/mine.list",
 ]
 
 [options]
-force_dot = true
+dot = "force"

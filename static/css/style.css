@@ -251,6 +251,44 @@ nav a:hover {
   text-align: center;
 }
 
+/* DoT specific styles */
+.dot-description {
+  margin-bottom: 15px;
+  color: var(--color-text-secondary);
+}
+
+.dot-add-form {
+  width: 100%;
+  min-width: 700px;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+  table-layout: fixed;
+}
+
+.dot-add-form thead tr {
+  background: var(--color-bg-table-header);
+}
+
+.dot-add-form th {
+  text-align: left;
+}
+
+.dot-add-form th.action-col {
+  text-align: center;
+}
+
+.dot-add-form input[type="text"] {
+  width: 85%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--color-text-primary);
+}
+
+.dot-add-form td.action-col {
+  text-align: center;
+}
+
 .local-network-entries-container {
   max-height: 980px;
   overflow-y: auto;
@@ -429,7 +467,7 @@ code {
 
 .dot-entries-table {
   width: 100%;
-  min-width: 500px;
+  min-width: 700px;
   border-collapse: separate;
   border-spacing: 0;
   margin-bottom: 0;
@@ -464,6 +502,18 @@ code {
   border-radius: 4px;
 }
 
+.dot-entries-table input[type="number"].edit-input {
+  width: 50px;
+  text-align: right;
+  -moz-appearance: textfield;
+}
+
+.dot-entries-table input[type="number"].edit-input::-webkit-outer-spin-button,
+.dot-entries-table input[type="number"].edit-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 .dot-entries-table .cancel-btn {
   display: none;
 }
@@ -474,7 +524,7 @@ code {
 }
 
 #entries-table.dot-entries-table .col-ip {
-  width: 18%;
+  width: 28%;
 }
 
 #entries-table.dot-entries-table .col-port {
@@ -533,32 +583,36 @@ code {
   border-color: var(--color-primary);
 }
 
-/* DoT Add form - transparent background for text inputs */
-#add-dot-entry-form input[type="text"] {
+/* DoT Add form - transparent background for text inputs (handled by .dot-add-form) */
+
+/* DoT Add form - transparent background for port input */
+#add-dot-entry-form input[type="number"] {
   background: transparent;
   border: none;
   color: var(--color-text-primary);
+  padding: 5px;
+  width: 50px;
+  text-align: right;
+  -moz-appearance: textfield;
   outline: none;
 }
 
-#add-dot-entry-form input[type="text"]:focus {
+#add-dot-entry-form input[type="number"]::-webkit-outer-spin-button,
+#add-dot-entry-form input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+#add-dot-entry-form input[type="number"]:focus {
   background: transparent;
   outline: none;
 }
 
-/* DoT Add form - darker background for port input */
-#add-dot-entry-form input[type="number"] {
-  background: var(--color-bg-table-header);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-primary);
-  padding: 5px;
-  border-radius: 4px;
-}
-
-#add-dot-entry-form input[type="number"]:focus {
-  background: var(--color-bg-content);
-  outline: none;
-  border-color: var(--color-primary);
+/* DoT hostname wrapping - allow wrapping on periods via <wbr> tags */
+#entries-table.dot-entries-table .col-hostname .display-value {
+  /* Normal word breaking behavior, <wbr> tags handle break opportunities */
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 /* DoT ordering buttons styling */
@@ -652,6 +706,19 @@ code {
   .col-ip {
     width: 25% !important;
   }
+  /* Keep DoT add form columns at original widths */
+  #add-dot-entry-form .col-hostname {
+    width: 32% !important;
+  }
+  #add-dot-entry-form .col-ip {
+    width: 30% !important;
+  }
+  #add-dot-entry-form .col-port {
+    width: 10% !important;
+  }
+  #entries-table.dot-entries-table .col-ip {
+    width: 30% !important;
+  }
 }
 
 @media (max-width: 480px) {
@@ -663,6 +730,24 @@ code {
     width: 25% !important;
   }
   .col-action-single {
-    max-width: 10% !important;
+    max-width: auto !important;
+  }
+  #add-dot-entry-form .col-hostname {
+    width: 30% !important;
+  }
+  #add-dot-entry-form .col-ip {
+    width: 28% !important;
+  }
+  #entries-table.dot-entries-table .col-order {
+    width: 9% !important;
+  }
+  #entries-table.dot-entries-table .col-hostname {
+    width: 21% !important;
+  }
+  #entries-table.dot-entries-table .col-ip {
+    width: 28% !important;
+  }
+  #entries-table.dot-entries-table .col-action-single {
+    width: auto !important;
   }
 }
