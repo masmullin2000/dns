@@ -15,8 +15,6 @@ pub struct StartupConfig {
     pub nameservers: Nameservers,
     #[serde(default = "Domains::default")]
     pub local_domains: Domains,
-    #[serde(default = "BlockFilters::default")]
-    pub blocklists: BlockFilters,
     #[serde(default = "Options::default")]
     pub options: Options,
 }
@@ -25,11 +23,15 @@ pub struct StartupConfig {
 pub struct Options {
     #[serde(default = "default_dot")]
     pub dot: String,
+    pub blocklist_dir: Option<String>,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { dot: default_dot() }
+        Self {
+            dot: default_dot(),
+            blocklist_dir: None,
+        }
     }
 }
 
@@ -177,7 +179,7 @@ impl RuntimeConfig {
 impl From<StartupConfig> for RuntimeConfig {
     fn from(startup: StartupConfig) -> Self {
         // Load blocklists
-        let blocklist_builder = BlockFilterBuilder::from(startup.blocklists.files);
+        let blocklist_builder = BlockFilterBuilder::from(startup.options.blocklist_dir.as_deref());
 
         // Build filter
         let block_filter = blocklist_builder.build();

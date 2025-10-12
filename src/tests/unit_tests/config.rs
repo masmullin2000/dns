@@ -64,12 +64,15 @@ domains = ["local", "home"]
 ip4 = ["1.1.1.1", "8.8.8.8"]
 
 [blocklists]
-files = ["./test_blocklist_runtime.list"]
+
+[options]
+blocklist_dir = "./test_blocklists_runtime"
 "#;
 
-    // Create a dummy blocklist file for the test
+    // Create a test blocklist directory and file
+    std::fs::create_dir_all("./test_blocklists_runtime").unwrap();
     std::fs::write(
-        "./test_blocklist_runtime.list",
+        "./test_blocklists_runtime/test.list",
         "*.blocked.com\n*.another.org",
     )
     .unwrap();
@@ -112,8 +115,8 @@ files = ["./test_blocklist_runtime.list"]
             .contains(&"8.8.8.8:53".parse().unwrap())
     );
 
-    // Clean up the dummy blocklist file
-    std::fs::remove_file("./test_blocklist_runtime.list").unwrap();
+    // Clean up the test blocklist directory
+    std::fs::remove_dir_all("./test_blocklists_runtime").unwrap();
 }
 
 #[test]
@@ -166,15 +169,16 @@ fn test_runtime_config_has_block_empty_blocklist() {
 
 #[test]
 fn test_runtime_config_has_block_with_blocklist() {
-    // Create a test blocklist file
+    // Create a test blocklist directory and file
+    std::fs::create_dir_all("./test_blocklists_blocking").unwrap();
     std::fs::write(
-        "./test_blocklist_blocking.list",
+        "./test_blocklists_blocking/test.list",
         "blocked.com\n*.another.org",
     )
     .unwrap();
 
     let mut startup_config = StartupConfig::default();
-    startup_config.blocklists.files = Some(vec!["./test_blocklist_blocking.list".to_string()]);
+    startup_config.options.blocklist_dir = Some("./test_blocklists_blocking".to_string());
 
     let runtime_config: RuntimeConfig = startup_config.into();
 
@@ -187,7 +191,7 @@ fn test_runtime_config_has_block_with_blocklist() {
     assert!(!runtime_config.has_block("google.com"));
 
     // Clean up
-    std::fs::remove_file("./test_blocklist_blocking.list").unwrap();
+    std::fs::remove_dir_all("./test_blocklists_blocking").unwrap();
 }
 
 #[test]

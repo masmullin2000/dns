@@ -195,16 +195,17 @@ async fn test_process_dns_request_blocked_domain() {
     // Setup config with blocked domain and nameservers to avoid empty select_all panic
     let mut startup_config = StartupConfig::default();
 
-    // Create a temporary blocklist file with unique name to avoid conflicts
-    let blocklist_file = format!("./test_blocked_domain_{}.tmp", std::process::id());
-    std::fs::write(&blocklist_file, "blocked.com").unwrap();
+    // Create a temporary blocklist directory with unique name to avoid conflicts
+    let blocklist_dir = format!("./test_blocked_domain_{}", std::process::id());
+    std::fs::create_dir_all(&blocklist_dir).unwrap();
+    std::fs::write(format!("{}/test.list", blocklist_dir), "blocked.com").unwrap();
 
-    startup_config.blocklists.files = Some(vec![blocklist_file.clone()]);
+    startup_config.options.blocklist_dir = Some(blocklist_dir.clone());
     startup_config.nameservers.ip4.insert("8.8.8.8".to_string()); // Add nameserver to avoid panic
     let config: RuntimeConfig = startup_config.into();
 
-    // Clean up the temporary file
-    std::fs::remove_file(&blocklist_file).ok();
+    // Clean up the temporary directory
+    std::fs::remove_dir_all(&blocklist_dir).ok();
 
     let cache = Arc::new(RwLock::new(dns_cache::Cache::default()));
     let query_bytes = create_dns_query("blocked.com", TYPE::A);
@@ -239,16 +240,17 @@ async fn test_process_dns_request_blocked_subdomain() {
     // Setup config with wildcard blocked domain and nameservers
     let mut startup_config = StartupConfig::default();
 
-    // Create a temporary blocklist file with unique name to avoid conflicts
-    let blocklist_file = format!("./test_blocked_subdomain_{}.tmp", std::process::id());
-    std::fs::write(&blocklist_file, "*.blocked.com").unwrap();
+    // Create a temporary blocklist directory with unique name to avoid conflicts
+    let blocklist_dir = format!("./test_blocked_subdomain_{}", std::process::id());
+    std::fs::create_dir_all(&blocklist_dir).unwrap();
+    std::fs::write(format!("{}/test.list", blocklist_dir), "*.blocked.com").unwrap();
 
-    startup_config.blocklists.files = Some(vec![blocklist_file.clone()]);
+    startup_config.options.blocklist_dir = Some(blocklist_dir.clone());
     startup_config.nameservers.ip4.insert("8.8.8.8".to_string()); // Add nameserver to avoid panic
     let config: RuntimeConfig = startup_config.into();
 
-    // Clean up the temporary file
-    std::fs::remove_file(&blocklist_file).ok();
+    // Clean up the temporary directory
+    std::fs::remove_dir_all(&blocklist_dir).ok();
 
     let cache = Arc::new(RwLock::new(dns_cache::Cache::default()));
     let query_bytes = create_dns_query("sub.blocked.com", TYPE::A);

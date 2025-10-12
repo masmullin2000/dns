@@ -150,3 +150,55 @@ impl From<Option<Vec<String>>> for BlockFilterBuilder {
         Self::from(blocklists)
     }
 }
+
+impl From<Option<&str>> for BlockFilterBuilder {
+    fn from(blocklist_dir: Option<&str>) -> Self {
+        let Some(dir_path) = blocklist_dir else {
+            warn!("No blocklist directory defined in config");
+            return Self::default();
+        };
+
+        let mut builder = Self::default();
+
+        // Read directory and find all .list files
+        let read_dir = match std::fs::read_dir(dir_path) {
+            Ok(rd) => rd,
+            Err(e) => {
+                error!("Failed to read blocklist directory {dir_path}: {e}");
+                return Self::default();
+            }
+        };
+
+        let mut file_count = 0;
+        for entry in read_dir {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(e) => {
+                    warn!("Failed to read directory entry: {e}");
+                    continue;
+                }
+            };
+
+            let path = entry.path();
+
+            // Check if it's a file with .list extension
+            if path.is_file()
+                && let Some(ext) = path.extension()
+                && ext == "list"
+                && let Some(path_str) = path.to_str()
+            {
+                if let Err(e) = builder.add_file(path_str) {
+                    error!("Failed to load blocklist file {path_str}: {e}");
+                } else {
+                    file_count += 1;
+                }
+            }
+        }
+
+        if file_count == 0 {
+            warn!("No .list files found in blocklist directory {dir_path}");
+        }
+
+        builder
+    }
+}

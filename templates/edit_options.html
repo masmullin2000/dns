@@ -29,6 +29,16 @@
         </div>
     </div>
 
+    <div style="margin-bottom: 20px;">
+        <label for="blocklist_dir" style="display: block; margin-bottom: 10px; font-weight: bold;">
+            Blocklist Directory:
+        </label>
+        <input type="text" name="blocklist_dir" id="blocklist_dir" value="{{ blocklist_dir }}" placeholder="/path/to/blocklists" style="width: 100%; font-family: monospace; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px; background: transparent; color: var(--color-text-primary);">
+        <p style="margin-top: 8px; color: #666; font-size: 14px;">
+            Specify the directory path containing blocklist files. All files with the <code>.list</code> extension in this directory will be loaded automatically.
+        </p>
+    </div>
+
     <div class="actions">
         <button type="submit" class="btn">Save Options</button>
         <a href="/" class="btn btn-secondary">Cancel</a>

@@ -59,8 +59,6 @@ pub async fn run_web(
         .route("/edit/local_domains/save", post(save_local_domain))
         .route("/edit/local_domains/update", post(update_local_domain))
         .route("/edit/local_domains/delete", post(delete_local_domain))
-        .route("/edit/blocklists", get(edit_blocklists))
-        .route("/edit/blocklists/save", post(save_blocklists))
         .route("/edit/nameservers", get(edit_nameservers))
         .route("/edit/nameservers/save", post(save_nameservers))
         .route("/edit/nameservers/update", post(update_nameservers))
@@ -188,17 +186,13 @@ pub struct ConfigForm {
 #[template(path = "edit_options.html")]
 struct EditOptionsTemplate {
     dot: String,
+    blocklist_dir: String,
 }
 
 #[derive(Deserialize)]
 pub struct OptionsForm {
     dot: String,
-}
-
-#[derive(Template)]
-#[template(path = "edit_blocklists.html")]
-struct EditBlocklistsTemplate {
-    content: String,
+    blocklist_dir: String,
 }
 
 pub async fn index() -> impl IntoResponse {
@@ -270,6 +264,7 @@ pub async fn edit_options(State(state): State<AppState>) -> impl IntoResponse {
     let config = state.parse_config().unwrap_or_default();
     let template = EditOptionsTemplate {
         dot: config.options.dot,
+        blocklist_dir: config.options.blocklist_dir.unwrap_or_default(),
     };
     render_template(template)
 }
@@ -297,6 +292,14 @@ pub async fn save_options(
 
     config.options.dot = dot_value;
 
+    // Update blocklist directory
+    let blocklist_dir = form.blocklist_dir.trim();
+    config.options.blocklist_dir = if blocklist_dir.is_empty() {
+        None
+    } else {
+        Some(blocklist_dir.to_string())
+    };
+
     match state.update_config(&config) {
         Ok(()) => {
             info!("Options saved successfully");
@@ -305,48 +308,6 @@ pub async fn save_options(
         Err(e) => {
             error!("Failed to save options: {e}");
             Redirect::to("/edit/options")
-        }
-    }
-}
-
-// Blocklists handlers
-pub async fn edit_blocklists(State(state): State<AppState>) -> impl IntoResponse {
-    let config = state.parse_config().unwrap_or_default();
-    let content = config.blocklists.files.unwrap_or_default().join("\n");
-
-    let template = EditBlocklistsTemplate { content };
-    render_template(template)
-}
-
-pub async fn save_blocklists(
-    State(state): State<AppState>,
-    Form(form): Form<ConfigForm>,
-) -> impl IntoResponse {
-    let mut config = match state.parse_config() {
-        Ok(c) => c,
-        Err(e) => {
-            error!("Failed to parse config: {e}");
-            return Redirect::to("/edit/blocklists");
-        }
-    };
-
-    let files: Vec<String> = form
-        .content
-        .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect();
-
-    config.blocklists.files = if files.is_empty() { None } else { Some(files) };
-
-    match state.update_config(&config) {
-        Ok(()) => {
-            info!("Blocklists saved successfully");
-            Redirect::to("/")
-        }
-        Err(e) => {
-            error!("Failed to save blocklists: {e}");
-            Redirect::to("/edit/blocklists")
         }
     }
 }
