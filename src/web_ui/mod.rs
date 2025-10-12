@@ -107,8 +107,11 @@ pub struct AppState {
 impl AppState {
     #[must_use]
     pub fn new(config_path: String, reset_sender: tokio::sync::mpsc::Sender<()>) -> Self {
-        let content = std::fs::read_to_string(&config_path)
-            .unwrap_or_else(|_| String::from("# Failed to load config"));
+        let content = std::fs::read_to_string(&config_path).unwrap_or_else(|_| {
+            // Create a valid default configuration if file doesn't exist
+            toml::to_string_pretty(&StartupConfig::default())
+                .unwrap_or_else(|_| String::from("[local_network]\n"))
+        });
 
         Self {
             config_path: Arc::new(config_path),

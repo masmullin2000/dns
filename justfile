@@ -60,4 +60,4 @@ web opt="dev" target="musl" triple=(arch() + "-unknown-linux"):
     just build {{opt}} {{target}} {{triple}} dns-web
     if [ {{opt}} = "dev" ]; then TYPE="debug"; else TYPE="release"; fi
     echo Running {{triple}}-{{target}}/$TYPE/dns-web
-    ./target/{{triple}}-{{target}}/$TYPE/dns-web -c ./dns.toml -p 3000 -l info
+    ./target/{{triple}}-{{target}}/$TYPE/dns-web -c ./dns.toml -p 3000 -d /code/dns -l debug 

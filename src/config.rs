@@ -21,14 +21,22 @@ pub struct StartupConfig {
     pub options: Options,
 }
 
-#[derive(Deserialize, serde::Serialize, Default, Debug)]
+#[derive(Deserialize, serde::Serialize, Debug)]
 pub struct Options {
     #[serde(default = "default_dot")]
     pub dot: String,
 }
 
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            dot: default_dot(),
+        }
+    }
+}
+
 fn default_dot() -> String {
-    "on".to_string()
+    "off".to_string()
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -45,8 +53,8 @@ impl From<&str> for DotEnabled {
             "on" => Self::On,
             "force" => Self::Force,
             _ => {
-                warn!("Invalid DoT option: {value}, defaulting to 'on'");
-                Self::On
+                warn!("Invalid DoT option: {value}, defaulting to 'off'");
+                Self::Off
             }
         }
     }
