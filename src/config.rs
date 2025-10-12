@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 use crate::block_filter::{BlockFilter, BlockFilterBuilder};
 
@@ -114,7 +114,7 @@ impl std::str::FromStr for StartupConfig {
             anyhow::anyhow!("Failed to parse configuration: {e}")
         });
 
-        info!("StartupConfig: {me:#?}");
+        debug!("StartupConfig: {me:#?}");
         me
     }
 }

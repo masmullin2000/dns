@@ -21,22 +21,39 @@ use tracing::{error, info, warn};
 
 pub use web::run_web;
 
-#[allow(clippy::cognitive_complexity)]
+const DEFAULT_NS_IP: std::net::Ipv4Addr = std::net::Ipv4Addr::new(1, 1, 1, 1);
+const DEFAULT_NS: std::net::SocketAddr =
+    std::net::SocketAddr::new(std::net::IpAddr::V4(DEFAULT_NS_IP), 53);
+
 pub async fn run(
-    cfg_str: impl AsRef<str>,
+    config_path: impl AsRef<str>,
     mut reset_recv: tokio::sync::mpsc::Receiver<()>,
 ) -> anyhow::Result<()> {
-    let cfg_str = cfg_str.as_ref();
+    let config_path = config_path.as_ref();
 
     // Preserve cache across reloads
     let cache = Arc::new(RwLock::new(dns_cache::Cache::default()));
 
     loop {
         // Load configuration
-        let config: StartupConfig = std::fs::read_to_string(cfg_str)?.parse()?;
-        let config: RuntimeConfig = config.into();
+        let config: StartupConfig = std::fs::read_to_string(config_path)
+            .inspect(|_| info!("Reading configuration file: {config_path}"))
+            .unwrap_or_else(|_| {
+                // Create a valid default configuration if file doesn't exist
+                info!("Configuration file not found, loading default configuration");
+                toml::to_string_pretty(&StartupConfig::default())
+                    .unwrap_or_else(|_| String::from("[local_network]\n"))
+            })
+            .parse()?;
+
+        let mut config: RuntimeConfig = config.into();
+        if config.nameservers.is_empty() {
+            warn!(
+                "No valid nameservers configured, configuring with Cloudflare DNS at {DEFAULT_NS}"
+            );
+            config.nameservers.push(DEFAULT_NS); // Default to Cloudflare DNS
+        }
         let config = Arc::new(config);
-        info!("Loaded DNS configuration from {cfg_str}");
 
         // Create cancellation token for this server instance
         let shutdown_token = CancellationToken::new();
@@ -55,8 +72,6 @@ pub async fn run(
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
         let reload_signal = shutdown_token.clone();
 
-        // let mut sighup = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())?;
-
         loop {
             tokio::select! {
                 _ = interval.tick() => {
@@ -65,7 +80,7 @@ pub async fn run(
                     }
                 }
                 _ = reset_recv.recv() => {
-                    info!("Received SIGHUP signal, reloading configuration...");
+                    info!("Received reset signal, reloading configuration...");
                     reload_signal.cancel();
                     break;
                 }

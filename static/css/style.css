@@ -66,6 +66,10 @@
   box-sizing: border-box;
 }
 
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
@@ -537,7 +541,6 @@ code {
   min-width: 500px;
   margin: 0;
   padding: 0 0px;
-  scrollbar-gutter: stable;
 }
 
 .responsive-table-wrapper {

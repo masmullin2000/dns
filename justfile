@@ -18,7 +18,7 @@ run opt="dev" target="musl" triple=(arch() + "-unknown-linux"):
     just build {{opt}} {{target}} {{triple}}
     if [ {{opt}} = "dev" ]; then TYPE="debug"; else TYPE="release"; fi
     echo Running {{triple}}-{{target}}/$TYPE/dns
-    sudo ./target/{{triple}}-{{target}}/$TYPE/dns -c ./dns.toml -l debug
+    sudo ./target/{{triple}}-{{target}}/$TYPE/dns -c ./dns.toml -l debug -w -d ./
 
 # Run clippy linter with pedantic/nursery lints
 clippy type="stable":
