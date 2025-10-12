@@ -5,7 +5,7 @@
 )]
 
 pub mod config;
-pub mod web_ui;
+pub mod web;
 
 mod block_filter;
 mod dns_cache;
@@ -19,7 +19,7 @@ use server::{tcp_server, udp_server};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
-pub use web_ui::run_web;
+pub use web::run_web;
 
 #[allow(clippy::cognitive_complexity)]
 pub async fn run(

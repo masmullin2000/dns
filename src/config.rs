@@ -29,9 +29,7 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Self {
-        Self {
-            dot: default_dot(),
-        }
+        Self { dot: default_dot() }
     }
 }
 

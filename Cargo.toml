@@ -63,7 +63,7 @@ path = "src/main.rs"
 
 [[bin]]
 name = "dns-web"
-path = "src/web.rs"
+path = "src/web_ui.rs"
 
 [features]
 default = []
